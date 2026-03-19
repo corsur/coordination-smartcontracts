@@ -2,6 +2,10 @@
 
 Solana program built with Anchor. Read the root `CLAUDE.md` before this file for project context and code standards.
 
+### Code Standard Clarifications (Solana)
+
+**Rule 3 — unbounded resource consumption:** On-chain, collection sizes must be statically bounded. Never use `Vec::with_capacity(n)` where `n` comes from instruction input — every caller can force arbitrary allocation and exhaust compute budget.
+
 ---
 
 ## File and Module Structure

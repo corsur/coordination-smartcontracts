@@ -1,0 +1,115 @@
+use anchor_lang::prelude::*;
+use anchor_lang::system_program;
+use crate::errors::CoordinationError;
+use crate::events::GameCreated;
+use crate::state::{
+    Game, GameCounter, GameState, PlayerProfile, Tournament,
+    GUESS_UNREVEALED, COMMIT_TIMEOUT_SLOTS,
+};
+
+pub fn create_game(ctx: Context<CreateGame>, stake_lamports: u64) -> Result<()> {
+    require!(stake_lamports > 0, CoordinationError::StakeMismatch);
+
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        ctx.accounts.tournament.is_active(now),
+        CoordinationError::OutsideTournamentWindow,
+    );
+
+    // Assign game_id from counter, then increment
+    let counter = &mut ctx.accounts.game_counter;
+    let game_id = counter.count;
+    counter.count = counter.count
+        .checked_add(1)
+        .ok_or(CoordinationError::ArithmeticOverflow)?;
+
+    let game = &mut ctx.accounts.game;
+    game.game_id = game_id;
+    game.tournament_id = ctx.accounts.tournament.tournament_id;
+    game.player_one = ctx.accounts.player.key();
+    game.player_two = Pubkey::default();
+    game.state = GameState::Pending;
+    game.stake_lamports = stake_lamports;
+    game.p1_commit = [0u8; 32];
+    game.p2_commit = [0u8; 32];
+    game.p1_guess = GUESS_UNREVEALED;
+    game.p2_guess = GUESS_UNREVEALED;
+    game.first_committer = 0;
+    game.p1_commit_slot = 0;
+    game.p2_commit_slot = 0;
+    game.commit_timeout_slots = COMMIT_TIMEOUT_SLOTS;
+    game.created_at = now;
+    game.resolved_at = 0;
+    game.bump = ctx.bumps.game;
+
+    // Init player profile if needed — player pays for their own account
+    let profile = &mut ctx.accounts.player_profile;
+    if profile.total_games == 0 && !profile.claimed {
+        profile.wallet = ctx.accounts.player.key();
+        profile.tournament_id = ctx.accounts.tournament.tournament_id;
+        profile.wins = 0;
+        profile.total_games = 0;
+        profile.score = 0;
+        profile.claimed = false;
+        profile.bump = ctx.bumps.player_profile;
+    }
+    require!(
+        profile.tournament_id == ctx.accounts.tournament.tournament_id,
+        CoordinationError::ProfileTournamentMismatch,
+    );
+
+    // Transfer stake from player to game PDA
+    system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
+                from: ctx.accounts.player.to_account_info(),
+                to: ctx.accounts.game.to_account_info(),
+            },
+        ),
+        stake_lamports,
+    )?;
+
+    emit!(GameCreated {
+        game_id,
+        tournament_id: ctx.accounts.tournament.tournament_id,
+        player_one: ctx.accounts.player.key(),
+        stake_lamports,
+    });
+    Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(stake_lamports: u64)]
+pub struct CreateGame<'info> {
+    #[account(
+        init,
+        payer = player,
+        space = Game::SPACE,
+        seeds = [b"game", game_counter.count.to_le_bytes().as_ref()],
+        bump,
+    )]
+    pub game: Account<'info, Game>,
+    #[account(
+        mut,
+        seeds = [b"game_counter"],
+        bump = game_counter.bump,
+    )]
+    pub game_counter: Account<'info, GameCounter>,
+    #[account(
+        init_if_needed,
+        payer = player,
+        space = PlayerProfile::SPACE,
+        seeds = [
+            b"player",
+            tournament.tournament_id.to_le_bytes().as_ref(),
+            player.key().as_ref(),
+        ],
+        bump,
+    )]
+    pub player_profile: Account<'info, PlayerProfile>,
+    pub tournament: Account<'info, Tournament>,
+    #[account(mut)]
+    pub player: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}

@@ -20,7 +20,10 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
 
     // Distribute lamports and record which players won/lost
     let (tournament_gain, slashed_player, p1_won, p2_won) = match outcome {
-        TimeoutOutcome::OneWinner { slashed_player, winner_is_p1 } => {
+        TimeoutOutcome::OneWinner {
+            slashed_player,
+            winner_is_p1,
+        } => {
             // Slash the non-participating player; return the winner's stake
             transfer_from_game(&game_info, &tournament_info, game.stake_lamports)?;
             let winner_wallet = if winner_is_p1 {
@@ -29,7 +32,12 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
                 ctx.accounts.player_two_wallet.to_account_info()
             };
             transfer_from_game(&game_info, &winner_wallet, game.stake_lamports)?;
-            (game.stake_lamports, slashed_player, winner_is_p1, !winner_is_p1)
+            (
+                game.stake_lamports,
+                slashed_player,
+                winner_is_p1,
+                !winner_is_p1,
+            )
         }
         TimeoutOutcome::BothForfeited => {
             // Neither player revealed — both stakes go to tournament, no winner
@@ -43,8 +51,12 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
         }
     };
 
-    ctx.accounts.p1_profile.update_after_game(p1_won, tournament_id)?;
-    ctx.accounts.p2_profile.update_after_game(p2_won, tournament_id)?;
+    ctx.accounts
+        .p1_profile
+        .update_after_game(p1_won, tournament_id)?;
+    ctx.accounts
+        .p2_profile
+        .update_after_game(p2_won, tournament_id)?;
 
     let tournament = &mut ctx.accounts.tournament;
     tournament.prize_lamports = tournament
@@ -61,7 +73,10 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
     game.resolved_at = now;
 
     // Postconditions: game must be resolved and timestamped
-    require!(game.state == GameState::Resolved, CoordinationError::InvalidGameState);
+    require!(
+        game.state == GameState::Resolved,
+        CoordinationError::InvalidGameState
+    );
     require!(game.resolved_at == now, CoordinationError::InvalidGameState);
 
     emit!(TimeoutSlash {

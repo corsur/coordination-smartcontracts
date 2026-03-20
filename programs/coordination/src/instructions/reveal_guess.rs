@@ -31,7 +31,11 @@ pub fn reveal_guess(ctx: Context<RevealGuess>, r: [u8; 32]) -> Result<()> {
 
     // Verify commitment: SHA-256(r) via sol_sha256 syscall
     let computed: [u8; 32] = hashv(&[r.as_ref()]).to_bytes();
-    let stored = if is_p1 { game.p1_commit } else { game.p2_commit };
+    let stored = if is_p1 {
+        game.p1_commit
+    } else {
+        game.p2_commit
+    };
     require!(computed == stored, CoordinationError::CommitmentMismatch);
 
     // Extract guess from the last bit of r — always in {0, 1} by construction
@@ -72,8 +76,12 @@ fn finalize_game(ctx: Context<RevealGuess>) -> Result<()> {
 
     let p1_won = p1_return > p2_return;
     let p2_won = p2_return > p1_return;
-    ctx.accounts.p1_profile.update_after_game(p1_won, tournament_id)?;
-    ctx.accounts.p2_profile.update_after_game(p2_won, tournament_id)?;
+    ctx.accounts
+        .p1_profile
+        .update_after_game(p1_won, tournament_id)?;
+    ctx.accounts
+        .p2_profile
+        .update_after_game(p2_won, tournament_id)?;
 
     let game = &mut ctx.accounts.game;
     game.state = GameState::Resolved;

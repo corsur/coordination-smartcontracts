@@ -55,7 +55,11 @@ pub fn commit_guess(ctx: Context<CommitGuess>, commitment: [u8; 32]) -> Result<(
         game.state == GameState::Revealing || game.state == GameState::Committing,
         CoordinationError::InvalidGameState,
     );
-    let stored = if is_p1 { game.p1_commit } else { game.p2_commit };
+    let stored = if is_p1 {
+        game.p1_commit
+    } else {
+        game.p2_commit
+    };
     require!(stored == commitment, CoordinationError::InvalidGameState);
 
     emit!(GuessCommitted {

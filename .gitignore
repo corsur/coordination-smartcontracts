@@ -4,7 +4,6 @@ target
 **/*.rs.bk
 node_modules
 test-ledger
-package-lock.json
 
 # Circuit intermediate files — not needed after setup
 circuits/bool_range/*.r1cs

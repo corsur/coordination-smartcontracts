@@ -45,7 +45,7 @@ echo "==> Exporting verification key JSON..."
 snarkjs zkey export verificationkey circuit_final.zkey verifying_key.json
 
 echo "==> Generating verifying_key.rs..."
-node export_vk.js
+npx ts-node export_vk.ts
 
 echo "==> Cleaning up intermediate files..."
 rm -f circuit_0000.zkey

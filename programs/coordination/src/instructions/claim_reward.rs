@@ -1,12 +1,18 @@
-use anchor_lang::prelude::*;
 use crate::errors::CoordinationError;
 use crate::events::RewardClaimed;
 use crate::state::{PlayerProfile, Tournament, MIN_GAMES_FOR_PAYOUT};
+use anchor_lang::prelude::*;
 
 pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
     let tournament = &ctx.accounts.tournament;
-    require!(tournament.finalized, CoordinationError::TournamentNotFinalized);
-    require!(tournament.prize_snapshot > 0, CoordinationError::EmptyPrizePool);
+    require!(
+        tournament.finalized,
+        CoordinationError::TournamentNotFinalized
+    );
+    require!(
+        tournament.prize_snapshot > 0,
+        CoordinationError::EmptyPrizePool
+    );
 
     let profile = &ctx.accounts.player_profile;
     require!(!profile.claimed, CoordinationError::AlreadyClaimed);
@@ -49,7 +55,10 @@ pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
     ctx.accounts.player_profile.claimed = true;
 
     // Postcondition: claimed flag must be set; prevents double-claim
-    require!(ctx.accounts.player_profile.claimed, CoordinationError::InvalidGameState);
+    require!(
+        ctx.accounts.player_profile.claimed,
+        CoordinationError::InvalidGameState
+    );
 
     emit!(RewardClaimed {
         tournament_id: tournament.tournament_id,

@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
 use crate::errors::CoordinationError;
 use crate::events::TimeoutSlash;
 use crate::state::{Game, GameState, PlayerProfile, Tournament, REVEAL_TIMEOUT_SLOTS};
+use anchor_lang::prelude::*;
 
 pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
     let game = &ctx.accounts.game;
@@ -16,7 +16,10 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
     let outcome = find_timeout(game, current_slot)?;
 
     let (tournament_gain, slashed_player) = match outcome {
-        TimeoutOutcome::OneWinner { slashed_player, winner_is_p1 } => {
+        TimeoutOutcome::OneWinner {
+            slashed_player,
+            winner_is_p1,
+        } => {
             // Slash the non-participating player; return the winner's stake
             transfer_from_game(
                 &ctx.accounts.game.to_account_info(),
@@ -40,7 +43,8 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
         }
         TimeoutOutcome::BothForfeited => {
             // Neither player revealed — both stakes go to tournament, no winner
-            let both_stakes = game.stake_lamports
+            let both_stakes = game
+                .stake_lamports
                 .checked_mul(2)
                 .ok_or(CoordinationError::ArithmeticOverflow)?;
             transfer_from_game(
@@ -59,10 +63,12 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
 
     // Update tournament
     let tournament = &mut ctx.accounts.tournament;
-    tournament.prize_lamports = tournament.prize_lamports
+    tournament.prize_lamports = tournament
+        .prize_lamports
         .checked_add(tournament_gain)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
-    tournament.game_count = tournament.game_count
+    tournament.game_count = tournament
+        .game_count
         .checked_add(1)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
 
@@ -71,7 +77,10 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
     game.resolved_at = now;
 
     // Postcondition: game must be resolved and timestamped
-    require!(game.state == GameState::Resolved, CoordinationError::InvalidGameState);
+    require!(
+        game.state == GameState::Resolved,
+        CoordinationError::InvalidGameState
+    );
     require!(game.resolved_at == now, CoordinationError::InvalidGameState);
 
     emit!(TimeoutSlash {
@@ -84,7 +93,10 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
 
 enum TimeoutOutcome {
     /// One player participated; the other forfeited.
-    OneWinner { slashed_player: Pubkey, winner_is_p1: bool },
+    OneWinner {
+        slashed_player: Pubkey,
+        winner_is_p1: bool,
+    },
     /// Both players failed to reveal — both stakes forfeit to tournament, no winner.
     BothForfeited,
 }
@@ -100,15 +112,22 @@ fn find_timeout(game: &Game, current_slot: u64) -> Result<TimeoutOutcome> {
                 game.p2_commit_slot
             };
             require!(
-                current_slot >= commit_slot
-                    .checked_add(game.commit_timeout_slots)
-                    .ok_or(CoordinationError::ArithmeticOverflow)?,
+                current_slot
+                    >= commit_slot
+                        .checked_add(game.commit_timeout_slots)
+                        .ok_or(CoordinationError::ArithmeticOverflow)?,
                 CoordinationError::TimeoutNotElapsed,
             );
             if p1_committed {
-                Ok(TimeoutOutcome::OneWinner { slashed_player: game.player_two, winner_is_p1: true })
+                Ok(TimeoutOutcome::OneWinner {
+                    slashed_player: game.player_two,
+                    winner_is_p1: true,
+                })
             } else {
-                Ok(TimeoutOutcome::OneWinner { slashed_player: game.player_one, winner_is_p1: false })
+                Ok(TimeoutOutcome::OneWinner {
+                    slashed_player: game.player_one,
+                    winner_is_p1: false,
+                })
             }
         }
         GameState::Revealing => {
@@ -122,11 +141,20 @@ fn find_timeout(game: &Game, current_slot: u64) -> Result<TimeoutOutcome> {
             let deadline = anchor_slot
                 .checked_add(REVEAL_TIMEOUT_SLOTS)
                 .ok_or(CoordinationError::ArithmeticOverflow)?;
-            require!(current_slot >= deadline, CoordinationError::TimeoutNotElapsed);
+            require!(
+                current_slot >= deadline,
+                CoordinationError::TimeoutNotElapsed
+            );
 
             match (p1_revealed, p2_revealed) {
-                (true, false) => Ok(TimeoutOutcome::OneWinner { slashed_player: game.player_two, winner_is_p1: true }),
-                (false, true) => Ok(TimeoutOutcome::OneWinner { slashed_player: game.player_one, winner_is_p1: false }),
+                (true, false) => Ok(TimeoutOutcome::OneWinner {
+                    slashed_player: game.player_two,
+                    winner_is_p1: true,
+                }),
+                (false, true) => Ok(TimeoutOutcome::OneWinner {
+                    slashed_player: game.player_one,
+                    winner_is_p1: false,
+                }),
                 (false, false) => Ok(TimeoutOutcome::BothForfeited),
                 (true, true) => {
                     // Both revealed — should have been resolved already
@@ -144,11 +172,13 @@ fn update_profile(profile: &mut PlayerProfile, won: bool, tournament_id: u64) ->
         CoordinationError::ProfileTournamentMismatch,
     );
     if won {
-        profile.wins = profile.wins
+        profile.wins = profile
+            .wins
             .checked_add(1)
             .ok_or(CoordinationError::ArithmeticOverflow)?;
     }
-    profile.total_games = profile.total_games
+    profile.total_games = profile
+        .total_games
         .checked_add(1)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
     profile.score = PlayerProfile::compute_score(profile.wins, profile.total_games)?;

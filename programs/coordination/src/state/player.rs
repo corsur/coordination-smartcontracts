@@ -1,5 +1,5 @@
-use anchor_lang::prelude::*;
 use crate::errors::CoordinationError;
+use anchor_lang::prelude::*;
 
 pub const MIN_GAMES_FOR_PAYOUT: u64 = 5;
 
@@ -22,7 +22,7 @@ impl PlayerProfile {
         + 8   // total_games
         + 8   // score
         + 1   // claimed
-        + 1;  // bump
+        + 1; // bump
 
     /// score = wins² / total_games (integer division)
     ///

@@ -1,11 +1,10 @@
-use anchor_lang::prelude::*;
-use anchor_lang::system_program;
 use crate::errors::CoordinationError;
 use crate::events::GameCreated;
 use crate::state::{
-    Game, GameCounter, GameState, PlayerProfile, Tournament,
-    GUESS_UNREVEALED, COMMIT_TIMEOUT_SLOTS,
+    Game, GameCounter, GameState, PlayerProfile, Tournament, COMMIT_TIMEOUT_SLOTS, GUESS_UNREVEALED,
 };
+use anchor_lang::prelude::*;
+use anchor_lang::system_program;
 
 pub fn create_game(ctx: Context<CreateGame>, stake_lamports: u64) -> Result<()> {
     require!(stake_lamports > 0, CoordinationError::StakeMismatch);
@@ -19,7 +18,8 @@ pub fn create_game(ctx: Context<CreateGame>, stake_lamports: u64) -> Result<()> 
     // Assign game_id from counter, then increment
     let counter = &mut ctx.accounts.game_counter;
     let game_id = counter.count;
-    counter.count = counter.count
+    counter.count = counter
+        .count
         .checked_add(1)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
 
@@ -59,7 +59,10 @@ pub fn create_game(ctx: Context<CreateGame>, stake_lamports: u64) -> Result<()> 
     );
 
     // Postcondition: game must be in Pending state awaiting player two
-    require!(game.state == GameState::Pending, CoordinationError::InvalidGameState);
+    require!(
+        game.state == GameState::Pending,
+        CoordinationError::InvalidGameState
+    );
 
     // Transfer stake from player to game PDA
     system_program::transfer(

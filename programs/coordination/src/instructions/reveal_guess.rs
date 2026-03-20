@@ -1,9 +1,9 @@
-use anchor_lang::prelude::*;
-use solana_sha256_hasher::hashv;
 use crate::errors::CoordinationError;
 use crate::events::{GameResolved, GuessRevealed};
 use crate::payoff::resolve_homogenous;
 use crate::state::{Game, GameState, PlayerProfile, Tournament, GUESS_UNREVEALED};
+use anchor_lang::prelude::*;
+use solana_sha256_hasher::hashv;
 
 pub fn reveal_guess(ctx: Context<RevealGuess>, guess: u8, salt: [u8; 32]) -> Result<()> {
     require!(
@@ -22,14 +22,24 @@ pub fn reveal_guess(ctx: Context<RevealGuess>, guess: u8, salt: [u8; 32]) -> Res
     require!(is_p1 || is_p2, CoordinationError::NotAParticipant);
 
     if is_p1 {
-        require!(game.p1_guess == GUESS_UNREVEALED, CoordinationError::AlreadyRevealed);
+        require!(
+            game.p1_guess == GUESS_UNREVEALED,
+            CoordinationError::AlreadyRevealed
+        );
     } else {
-        require!(game.p2_guess == GUESS_UNREVEALED, CoordinationError::AlreadyRevealed);
+        require!(
+            game.p2_guess == GUESS_UNREVEALED,
+            CoordinationError::AlreadyRevealed
+        );
     }
 
     // Verify commitment: SHA-256(guess_byte || salt) via sol_sha256 syscall
     let computed: [u8; 32] = hashv(&[&[guess], salt.as_ref()]).to_bytes();
-    let stored = if is_p1 { game.p1_commit } else { game.p2_commit };
+    let stored = if is_p1 {
+        game.p1_commit
+    } else {
+        game.p2_commit
+    };
     require!(computed == stored, CoordinationError::CommitmentMismatch);
 
     let game = &mut ctx.accounts.game;
@@ -39,10 +49,12 @@ pub fn reveal_guess(ctx: Context<RevealGuess>, guess: u8, salt: [u8; 32]) -> Res
         game.p2_guess = guess;
     }
 
-    emit!(GuessRevealed { game_id: game.game_id, player: player_key });
+    emit!(GuessRevealed {
+        game_id: game.game_id,
+        player: player_key
+    });
 
-    let both_revealed =
-        game.p1_guess != GUESS_UNREVEALED && game.p2_guess != GUESS_UNREVEALED;
+    let both_revealed = game.p1_guess != GUESS_UNREVEALED && game.p2_guess != GUESS_UNREVEALED;
 
     if both_revealed {
         finalize_game(ctx)?;
@@ -73,7 +85,10 @@ fn finalize_game(ctx: Context<RevealGuess>) -> Result<()> {
     game.resolved_at = now;
 
     // Postcondition: game must be resolved and timestamped
-    require!(game.state == GameState::Resolved, CoordinationError::InvalidGameState);
+    require!(
+        game.state == GameState::Resolved,
+        CoordinationError::InvalidGameState
+    );
     require!(game.resolved_at == now, CoordinationError::InvalidGameState);
 
     emit!(GameResolved {
@@ -88,17 +103,17 @@ fn finalize_game(ctx: Context<RevealGuess>) -> Result<()> {
 }
 
 /// Compute p1_return, p2_return, tournament_gain based on guesses and tournament timing.
-fn compute_returns(
-    game: &Game,
-    now: i64,
-    tournament_end_time: i64,
-) -> Result<(u64, u64, u64)> {
+fn compute_returns(game: &Game, now: i64, tournament_end_time: i64) -> Result<(u64, u64, u64)> {
     // Late resolution: return full stakes, contribute nothing to prize pool
     if now > tournament_end_time {
         return Ok((game.stake_lamports, game.stake_lamports, 0u64));
     }
     let resolution = resolve_homogenous(game.p1_guess, game.p2_guess, game.stake_lamports)?;
-    Ok((resolution.p1_return, resolution.p2_return, resolution.tournament_gain))
+    Ok((
+        resolution.p1_return,
+        resolution.p2_return,
+        resolution.tournament_gain,
+    ))
 }
 
 /// Transfer resolved amounts from game PDA to player wallets and tournament.
@@ -155,11 +170,13 @@ fn update_profile(profile: &mut PlayerProfile, won: bool, tournament_id: u64) ->
         CoordinationError::ProfileTournamentMismatch,
     );
     if won {
-        profile.wins = profile.wins
+        profile.wins = profile
+            .wins
             .checked_add(1)
             .ok_or(CoordinationError::ArithmeticOverflow)?;
     }
-    profile.total_games = profile.total_games
+    profile.total_games = profile
+        .total_games
         .checked_add(1)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
     profile.score = PlayerProfile::compute_score(profile.wins, profile.total_games)?;

@@ -1,8 +1,8 @@
-use anchor_lang::prelude::*;
-use anchor_lang::Discriminator;
 use crate::errors::CoordinationError;
 use crate::events::TournamentFinalized;
 use crate::state::{PlayerProfile, Tournament};
+use anchor_lang::prelude::*;
+use anchor_lang::Discriminator;
 
 /// Maximum number of PlayerProfile accounts accepted per call.
 /// Solana transaction size limits practical use to ~30 accounts.
@@ -54,11 +54,7 @@ pub fn finalize_tournament(ctx: Context<FinalizeTournament>) -> Result<()> {
 ///
 /// Reads raw account data to avoid borrow conflicts with the mutable
 /// tournament account that follows. Layout is stable and documented below.
-fn sum_scores(
-    accounts: &[AccountInfo],
-    tournament_id: u64,
-    program_id: &Pubkey,
-) -> Result<u64> {
+fn sum_scores(accounts: &[AccountInfo], tournament_id: u64, program_id: &Pubkey) -> Result<u64> {
     let mut total: u64 = 0;
 
     for account_info in accounts.iter() {
@@ -71,8 +67,7 @@ fn sum_scores(
 
         // Verify discriminator matches PlayerProfile (first 8 bytes).
         require!(
-            data.len() >= PlayerProfile::SPACE
-                && data[..8] == *PlayerProfile::DISCRIMINATOR,
+            data.len() >= PlayerProfile::SPACE && data[..8] == *PlayerProfile::DISCRIMINATOR,
             CoordinationError::ProfileTournamentMismatch,
         );
 

@@ -33,6 +33,12 @@ jobs:
 
       - run: npm ci
 
+      - run: cargo fmt --check
+
+      - run: cargo clippy --all-targets -- -D warnings
+
+      - run: npm run lint
+
       - name: Generate throwaway keypair for local validator
         run: |
           mkdir -p ~/.config/solana
@@ -41,6 +47,10 @@ jobs:
       - run: anchor build
 
       - run: anchor test
+
+      - name: Stop local validator
+        if: always()
+        run: pkill -f solana-test-validator || true
 
   deploy:
     if: github.ref == 'refs/heads/main'

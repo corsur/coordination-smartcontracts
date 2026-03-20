@@ -1,7 +1,7 @@
-use anchor_lang::prelude::*;
 use crate::errors::CoordinationError;
 use crate::events::TournamentCreated;
 use crate::state::Tournament;
+use anchor_lang::prelude::*;
 
 pub fn create_tournament(
     ctx: Context<CreateTournament>,
@@ -10,7 +10,10 @@ pub fn create_tournament(
     end_time: i64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    require!(end_time > start_time, CoordinationError::OutsideTournamentWindow);
+    require!(
+        end_time > start_time,
+        CoordinationError::OutsideTournamentWindow
+    );
     require!(end_time > now, CoordinationError::TournamentNotEnded);
 
     let t = &mut ctx.accounts.tournament;
@@ -27,9 +30,16 @@ pub fn create_tournament(
 
     // Postconditions: verify tournament was initialized correctly
     require!(!t.finalized, CoordinationError::InvalidGameState);
-    require!(t.end_time > t.start_time, CoordinationError::OutsideTournamentWindow);
+    require!(
+        t.end_time > t.start_time,
+        CoordinationError::OutsideTournamentWindow
+    );
 
-    emit!(TournamentCreated { tournament_id, start_time, end_time });
+    emit!(TournamentCreated {
+        tournament_id,
+        start_time,
+        end_time
+    });
     Ok(())
 }
 

@@ -1,12 +1,15 @@
-use anchor_lang::prelude::*;
-use anchor_lang::system_program;
 use crate::errors::CoordinationError;
 use crate::events::GameStarted;
 use crate::state::{Game, GameState, PlayerProfile, Tournament};
+use anchor_lang::prelude::*;
+use anchor_lang::system_program;
 
 pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
     let game = &ctx.accounts.game;
-    require!(game.state == GameState::Pending, CoordinationError::InvalidGameState);
+    require!(
+        game.state == GameState::Pending,
+        CoordinationError::InvalidGameState
+    );
     require!(
         ctx.accounts.player.key() != game.player_one,
         CoordinationError::CannotJoinOwnGame,
@@ -53,8 +56,14 @@ pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
     game.state = GameState::Active;
 
     // Postcondition: game must now be Active with both players set
-    require!(game.state == GameState::Active, CoordinationError::InvalidGameState);
-    require!(game.player_two != Pubkey::default(), CoordinationError::InvalidGameState);
+    require!(
+        game.state == GameState::Active,
+        CoordinationError::InvalidGameState
+    );
+    require!(
+        game.player_two != Pubkey::default(),
+        CoordinationError::InvalidGameState
+    );
 
     emit!(GameStarted {
         game_id: game.game_id,

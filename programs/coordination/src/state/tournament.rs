@@ -25,7 +25,7 @@ impl Tournament {
         + 1   // finalized
         + 8   // prize_snapshot
         + 8   // total_score_snapshot
-        + 1;  // bump
+        + 1; // bump
 
     pub fn is_active(&self, now: i64) -> bool {
         now >= self.start_time && now <= self.end_time

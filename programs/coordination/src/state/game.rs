@@ -57,7 +57,7 @@ impl Game {
         + 8   // commit_timeout_slots
         + 8   // created_at
         + 8   // resolved_at
-        + 1;  // bump
+        + 1; // bump
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
@@ -68,6 +68,9 @@ pub enum GameState {
     Revealing,
     Resolved,
 }
+
+// Compile-time invariant: reveal window must be longer than commit window.
+const _: () = assert!(REVEAL_TIMEOUT_SLOTS > COMMIT_TIMEOUT_SLOTS);
 
 #[cfg(test)]
 mod tests {
@@ -89,7 +92,9 @@ mod tests {
 
     #[test]
     fn timeout_slots_ordering() {
-        // Reveal timeout must be longer than commit timeout
-        assert!(REVEAL_TIMEOUT_SLOTS > COMMIT_TIMEOUT_SLOTS);
+        // Reveal timeout must be longer than commit timeout — verified at
+        // compile time by the const assertion in the parent module.
+        assert_eq!(REVEAL_TIMEOUT_SLOTS, 14_400);
+        assert_eq!(COMMIT_TIMEOUT_SLOTS, 7_200);
     }
 }

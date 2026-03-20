@@ -32,11 +32,10 @@ const OUT_RS = path.join(__dirname, "verifying_key.rs");
 
 function hexToBytes32(val: string): Buffer {
   // snarkjs may export as decimal string or 0x-prefixed hex string
-  const hex = val.startsWith("0x")
-    ? val.slice(2)
-    : BigInt(val).toString(16);
+  const hex = val.startsWith("0x") ? val.slice(2) : BigInt(val).toString(16);
   const buf = Buffer.from(hex.padStart(64, "0"), "hex");
-  if (buf.length !== 32) throw new Error(`Expected 32 bytes, got ${buf.length} for ${val}`);
+  if (buf.length !== 32)
+    throw new Error(`Expected 32 bytes, got ${buf.length} for ${val}`);
   return buf;
 }
 
@@ -60,7 +59,8 @@ function toRustByteArray(buf: Buffer): string {
 
 const vk: VerifyingKey = JSON.parse(fs.readFileSync(VK_JSON, "utf8"));
 
-if (vk.protocol !== "groth16") throw new Error(`Expected groth16, got ${vk.protocol}`);
+if (vk.protocol !== "groth16")
+  throw new Error(`Expected groth16, got ${vk.protocol}`);
 if (vk.curve !== "bn128") throw new Error(`Expected bn128, got ${vk.curve}`);
 
 const nPublic = vk.nPublic;
@@ -71,7 +71,9 @@ const deltaG2 = g2ToBytes(vk.vk_delta_2);
 const ic = vk.IC.map(g1ToBytes);
 
 if (ic.length !== nPublic + 1) {
-  throw new Error(`IC length mismatch: expected ${nPublic + 1}, got ${ic.length}`);
+  throw new Error(
+    `IC length mismatch: expected ${nPublic + 1}, got ${ic.length}`
+  );
 }
 
 const icEntries = ic

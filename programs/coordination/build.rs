@@ -1,6 +1,9 @@
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let vk_path = format!("{}/../../circuits/bool_range/verifying_key.rs", manifest_dir);
+    let vk_path = format!(
+        "{}/../../circuits/bool_range/verifying_key.rs",
+        manifest_dir
+    );
 
     // Recompile the program whenever the verifying key is regenerated.
     println!("cargo:rerun-if-changed={}", vk_path);

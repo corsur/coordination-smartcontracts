@@ -1,6 +1,6 @@
-use anchor_lang::prelude::*;
 use crate::errors::CoordinationError;
 use crate::state::{Game, GameState};
+use anchor_lang::prelude::*;
 
 /// Closes a resolved game account and sends the rent-exempt lamports to the caller.
 /// Permissionless — any wallet can call to reclaim rent after a game resolves.

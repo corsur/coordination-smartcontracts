@@ -1,8 +1,8 @@
-use anchor_lang::prelude::*;
 use crate::errors::CoordinationError;
 use crate::events::GuessCommitted;
 use crate::state::{Game, GameState};
 use crate::zk;
+use anchor_lang::prelude::*;
 
 pub fn commit_guess(
     ctx: Context<CommitGuess>,
@@ -24,9 +24,15 @@ pub fn commit_guess(
 
     // Check not already committed
     if is_p1 {
-        require!(game.p1_commit == [0u8; 32], CoordinationError::AlreadyCommitted);
+        require!(
+            game.p1_commit == [0u8; 32],
+            CoordinationError::AlreadyCommitted
+        );
     } else {
-        require!(game.p2_commit == [0u8; 32], CoordinationError::AlreadyCommitted);
+        require!(
+            game.p2_commit == [0u8; 32],
+            CoordinationError::AlreadyCommitted
+        );
     }
 
     // Verify the ZK range proof that commitment encodes a valid guess ∈ {0, 1}
@@ -43,8 +49,7 @@ pub fn commit_guess(
         game.p2_commit_slot = slot;
     }
 
-    let both_committed =
-        game.p1_commit != [0u8; 32] && game.p2_commit != [0u8; 32];
+    let both_committed = game.p1_commit != [0u8; 32] && game.p2_commit != [0u8; 32];
 
     if game.first_committer == 0 {
         game.first_committer = if is_p1 { 1 } else { 2 };

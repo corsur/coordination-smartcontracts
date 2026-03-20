@@ -24,7 +24,8 @@ pub fn resolve_homogenous(p1_guess: u8, p2_guess: u8, stake_lamports: u64) -> Re
         .checked_mul(2)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
 
-    let both_correct = p1_guess == crate::state::GUESS_HUMAN && p2_guess == crate::state::GUESS_HUMAN;
+    let both_correct =
+        p1_guess == crate::state::GUESS_HUMAN && p2_guess == crate::state::GUESS_HUMAN;
 
     if both_correct {
         // 90% return: stake * 9 / 10
@@ -65,13 +66,20 @@ pub fn resolve_homogenous(p1_guess: u8, p2_guess: u8, stake_lamports: u64) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{GUESS_HUMAN, GUESS_AI};
+    use crate::state::{GUESS_AI, GUESS_HUMAN};
 
     fn assert_invariant(r: &Resolution, stake: u64) {
-        let total = r.p1_return
-            .checked_add(r.p2_return).unwrap()
-            .checked_add(r.tournament_gain).unwrap();
-        assert_eq!(total, stake.checked_mul(2).unwrap(), "lamports must be conserved");
+        let total = r
+            .p1_return
+            .checked_add(r.p2_return)
+            .unwrap()
+            .checked_add(r.tournament_gain)
+            .unwrap();
+        assert_eq!(
+            total,
+            stake.checked_mul(2).unwrap(),
+            "lamports must be conserved"
+        );
     }
 
     #[test]

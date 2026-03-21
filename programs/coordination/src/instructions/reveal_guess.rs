@@ -218,5 +218,4 @@ pub struct RevealGuess<'info> {
     /// CHECK: Destination for player two's stake return — verified by game.player_two
     #[account(mut, address = game.player_two)]
     pub player_two_wallet: UncheckedAccount<'info>,
-    pub system_program: Program<'info, System>,
 }

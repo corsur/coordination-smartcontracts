@@ -90,6 +90,10 @@ pub struct JoinGame<'info> {
         bump,
     )]
     pub player_profile: Account<'info, PlayerProfile>,
+    #[account(
+        seeds = [b"tournament", game.tournament_id.to_le_bytes().as_ref()],
+        bump = tournament.bump,
+    )]
     pub tournament: Account<'info, Tournament>,
     #[account(mut)]
     pub player: Signer<'info>,

@@ -10,6 +10,10 @@ pub fn commit_guess(ctx: Context<CommitGuess>, commitment: [u8; 32]) -> Result<(
         CoordinationError::InvalidGameState,
     );
 
+    // Reject the all-zeros sentinel — it is used to detect "not yet committed"
+    // and a player who submits it could commit a second time.
+    require!(commitment != [0u8; 32], CoordinationError::InvalidGameState);
+
     let player_key = ctx.accounts.player.key();
     let is_p1 = player_key == game.player_one;
     let is_p2 = player_key == game.player_two;

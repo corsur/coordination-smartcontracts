@@ -107,6 +107,12 @@ jobs:
             sleep 2
           done
 
+      - name: Close orphaned buffer accounts
+        run: |
+          # Failed deploys leave behind funded buffer accounts whose SOL is locked in
+          # the wallet. Close them before deploying to recover those lamports.
+          solana program close --buffers --url devnet --keypair ~/.config/solana/id.json || true
+
       - name: Deploy to devnet
         run: anchor deploy --provider.cluster devnet
 

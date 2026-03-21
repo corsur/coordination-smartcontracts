@@ -2,7 +2,8 @@
   "license": "ISC",
   "scripts": {
     "lint:fix": "prettier \"**/*.ts\" -w",
-    "lint": "prettier \"**/*.ts\" --check && tsc --noEmit"
+    "lint": "prettier \"**/*.ts\" --check && tsc --noEmit",
+    "ts-node": "ts-node"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1"

@@ -40,6 +40,7 @@ pub fn reveal_guess(ctx: Context<RevealGuess>, r: [u8; 32]) -> Result<()> {
 
     // Extract guess from the last bit of r — always in {0, 1} by construction
     let guess = r[31] & 1;
+    require!(guess <= 1, CoordinationError::InvalidGuessValue);
 
     let game = &mut ctx.accounts.game;
     if is_p1 {

@@ -127,6 +127,7 @@ p2_commit_slot:           u64       Solana slot at commit time
 commit_timeout_slots:     u64       set at creation (see Timeouts)
 created_at:               i64       Unix timestamp
 resolved_at:              i64       0 until resolved
+matchup_type:             u8        always 0 in v1 (homogenous); reserved for future heterogeneous matches
 bump:                     u8
 ```
 
@@ -356,5 +357,5 @@ RewardClaimed       { tournament_id: u64, player: Pubkey, amount: u64 }
 
 ## Open Questions
 
-- **Heterogeneous matchup payoffs** — the payoff matrix for human vs. AI matches is defined in root `CLAUDE.md` but not implemented in v1. When AI agents are added, `matchup_type` on the Game account drives the resolution logic. The field exists in v1 and is always set to 0.
+- **Heterogeneous matchup payoffs** — the payoff matrix for human vs. AI matches is defined in root `CLAUDE.md` but not implemented in v1. When AI agents are added, `matchup_type` on the Game account drives the resolution logic.
 - **`finalize_tournament` scaling** — passing all PlayerProfile accounts as remaining accounts works for small tournaments but hits transaction size limits at scale. Redesign needed before production.

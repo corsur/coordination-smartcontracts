@@ -35,6 +35,8 @@ pub struct Game {
     pub commit_timeout_slots: u64,
     pub created_at: i64,
     pub resolved_at: i64,
+    /// Always 0 in v1 (homogenous only). Reserved for future heterogeneous matchups.
+    pub matchup_type: u8,
     pub bump: u8,
 }
 
@@ -57,6 +59,7 @@ impl Game {
         + 8   // commit_timeout_slots
         + 8   // created_at
         + 8   // resolved_at
+        + 1   // matchup_type
         + 1; // bump
 }
 

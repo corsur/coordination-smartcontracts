@@ -40,6 +40,7 @@ pub fn create_game(ctx: Context<CreateGame>, stake_lamports: u64) -> Result<()> 
     game.commit_timeout_slots = COMMIT_TIMEOUT_SLOTS;
     game.created_at = now;
     game.resolved_at = 0;
+    game.matchup_type = 0;
     game.bump = ctx.bumps.game;
 
     // Init player profile if needed — player pays for their own account

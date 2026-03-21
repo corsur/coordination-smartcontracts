@@ -41,6 +41,10 @@ pub fn finalize_tournament(ctx: Context<FinalizeTournament>) -> Result<()> {
     tournament.total_score_snapshot = total_score;
 
     require!(tournament.finalized, CoordinationError::InvalidGameState);
+    require!(
+        tournament.prize_snapshot == prize_snapshot,
+        CoordinationError::InvalidGameState
+    );
 
     emit!(TournamentFinalized {
         tournament_id,

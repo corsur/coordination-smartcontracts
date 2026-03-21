@@ -708,8 +708,12 @@ describe("coordination", () => {
     );
 
     // Capture balances before any stake is locked, so the full stake loss is visible.
-    const p1BalanceBefore = await provider.connection.getBalance(player1.publicKey);
-    const p2BalanceBefore = await provider.connection.getBalance(player2.publicKey);
+    const p1BalanceBefore = await provider.connection.getBalance(
+      player1.publicKey
+    );
+    const p2BalanceBefore = await provider.connection.getBalance(
+      player2.publicKey
+    );
 
     // Create game with matchup_type = 1 (different teams)
     await program.methods

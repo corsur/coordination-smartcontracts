@@ -157,7 +157,11 @@ describe("coordination", () => {
     const game = await program.account.game.fetch(gamePda);
     assert.equal(game.playerOne.toString(), player1.publicKey.toString());
     assert.equal(game.stakeLamports.toString(), STAKE.toString());
-    assert.equal(game.matchupType, GUESS_SAME_TEAM, "matchup_type should be 0 (same team)");
+    assert.equal(
+      game.matchupType,
+      GUESS_SAME_TEAM,
+      "matchup_type should be 0 (same team)"
+    );
   });
 
   it("player 2 joins the game", async () => {
@@ -339,8 +343,16 @@ describe("coordination", () => {
       .rpc();
 
     const game = await program.account.game.fetch(gamePda);
-    assert.equal(game.p1Guess, GUESS_SAME_TEAM, "p1 should have guessed same team");
-    assert.equal(game.p2Guess, GUESS_SAME_TEAM, "p2 should have guessed same team");
+    assert.equal(
+      game.p1Guess,
+      GUESS_SAME_TEAM,
+      "p1 should have guessed same team"
+    );
+    assert.equal(
+      game.p2Guess,
+      GUESS_SAME_TEAM,
+      "p2 should have guessed same team"
+    );
     assert.notEqual(game.resolvedAt.toString(), "0", "game should be resolved");
 
     // Both correct in homogenous match → each gets 90% back, tournament gets 10% from each
@@ -647,12 +659,19 @@ describe("coordination", () => {
     // Create a fresh tournament for this test so we can run it in isolation
     const heteroTournamentId = new BN(2);
     const [heteroTournamentPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("tournament"), heteroTournamentId.toArrayLike(Buffer, "le", 8)],
+      [
+        Buffer.from("tournament"),
+        heteroTournamentId.toArrayLike(Buffer, "le", 8),
+      ],
       program.programId
     );
     const now = Math.floor(Date.now() / 1000);
     await program.methods
-      .createTournament(heteroTournamentId, new BN(now - 60), new BN(now + 3600))
+      .createTournament(
+        heteroTournamentId,
+        new BN(now - 60),
+        new BN(now + 3600)
+      )
       .accountsPartial({
         tournament: heteroTournamentPda,
         authority: provider.wallet.publicKey,
@@ -666,13 +685,25 @@ describe("coordination", () => {
       [Buffer.from("game"), heteroGameId.toArrayLike(Buffer, "le", 8)],
       program.programId
     );
-    const heteroTournamentIdBuf = heteroTournamentId.toArrayLike(Buffer, "le", 8);
+    const heteroTournamentIdBuf = heteroTournamentId.toArrayLike(
+      Buffer,
+      "le",
+      8
+    );
     const [hetP1ProfilePda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("player"), heteroTournamentIdBuf, player1.publicKey.toBuffer()],
+      [
+        Buffer.from("player"),
+        heteroTournamentIdBuf,
+        player1.publicKey.toBuffer(),
+      ],
       program.programId
     );
     const [hetP2ProfilePda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("player"), heteroTournamentIdBuf, player2.publicKey.toBuffer()],
+      [
+        Buffer.from("player"),
+        heteroTournamentIdBuf,
+        player2.publicKey.toBuffer(),
+      ],
       program.programId
     );
 
@@ -691,7 +722,11 @@ describe("coordination", () => {
       .rpc();
 
     const createdGame = await program.account.game.fetch(heteroGamePda);
-    assert.equal(createdGame.matchupType, GUESS_DIFF_TEAM, "matchup_type should be 1 (diff team)");
+    assert.equal(
+      createdGame.matchupType,
+      GUESS_DIFF_TEAM,
+      "matchup_type should be 1 (diff team)"
+    );
 
     // Player 2 joins
     await program.methods
@@ -724,8 +759,12 @@ describe("coordination", () => {
       .rpc();
 
     // Capture balances before reveal
-    const p1BalanceBefore = await provider.connection.getBalance(player1.publicKey);
-    const p2BalanceBefore = await provider.connection.getBalance(player2.publicKey);
+    const p1BalanceBefore = await provider.connection.getBalance(
+      player1.publicKey
+    );
+    const p2BalanceBefore = await provider.connection.getBalance(
+      player2.publicKey
+    );
 
     // Both reveal
     const revealAccounts = {
@@ -751,19 +790,39 @@ describe("coordination", () => {
       .rpc();
 
     const resolvedGame = await program.account.game.fetch(heteroGamePda);
-    assert.equal(resolvedGame.p1Guess, GUESS_DIFF_TEAM, "p1 should have guessed diff team");
-    assert.equal(resolvedGame.p2Guess, GUESS_DIFF_TEAM, "p2 should have guessed diff team");
-    assert.equal(resolvedGame.firstCommitter, 1, "p1 should be first committer");
-    assert.notEqual(resolvedGame.resolvedAt.toString(), "0", "game should be resolved");
+    assert.equal(
+      resolvedGame.p1Guess,
+      GUESS_DIFF_TEAM,
+      "p1 should have guessed diff team"
+    );
+    assert.equal(
+      resolvedGame.p2Guess,
+      GUESS_DIFF_TEAM,
+      "p2 should have guessed diff team"
+    );
+    assert.equal(
+      resolvedGame.firstCommitter,
+      1,
+      "p1 should be first committer"
+    );
+    assert.notEqual(
+      resolvedGame.resolvedAt.toString(),
+      "0",
+      "game should be resolved"
+    );
 
     // P1 committed first, both correct → p1 wins 1.9× stake
     const expectedP1Return = STAKE.muln(19).divn(10); // 19_000_000
-    const p1BalanceAfter = await provider.connection.getBalance(player1.publicKey);
+    const p1BalanceAfter = await provider.connection.getBalance(
+      player1.publicKey
+    );
     const p1Net = p1BalanceAfter - p1BalanceBefore;
     // p1Net ≈ expectedP1Return - STAKE (stake was locked) minus tx fees
     // We just check the tournament got its share
     const expectedTournamentGain = new BN(2).mul(STAKE).sub(expectedP1Return); // 1_000_000
-    const hetTournament = await program.account.tournament.fetch(heteroTournamentPda);
+    const hetTournament = await program.account.tournament.fetch(
+      heteroTournamentPda
+    );
     assert.equal(
       hetTournament.prizeLamports.toString(),
       expectedTournamentGain.toString(),
@@ -771,7 +830,9 @@ describe("coordination", () => {
     );
 
     // P2 should receive nothing (lost)
-    const p2BalanceAfter = await provider.connection.getBalance(player2.publicKey);
+    const p2BalanceAfter = await provider.connection.getBalance(
+      player2.publicKey
+    );
     // p2 net = -(stake + tx fees) — approximately, just check they didn't gain
     assert.isBelow(p2BalanceAfter, p2BalanceBefore, "p2 should lose stake");
   });

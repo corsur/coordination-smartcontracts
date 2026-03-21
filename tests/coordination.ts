@@ -707,6 +707,10 @@ describe("coordination", () => {
       program.programId
     );
 
+    // Capture balances before any stake is locked, so the full stake loss is visible.
+    const p1BalanceBefore = await provider.connection.getBalance(player1.publicKey);
+    const p2BalanceBefore = await provider.connection.getBalance(player2.publicKey);
+
     // Create game with matchup_type = 1 (different teams)
     await program.methods
       .createGame(STAKE, GUESS_DIFF_TEAM)
@@ -757,14 +761,6 @@ describe("coordination", () => {
       .accountsPartial({ game: heteroGamePda, player: player2.publicKey })
       .signers([player2])
       .rpc();
-
-    // Capture balances before reveal
-    const p1BalanceBefore = await provider.connection.getBalance(
-      player1.publicKey
-    );
-    const p2BalanceBefore = await provider.connection.getBalance(
-      player2.publicKey
-    );
 
     // Both reveal
     const revealAccounts = {

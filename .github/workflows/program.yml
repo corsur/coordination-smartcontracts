@@ -96,6 +96,17 @@ jobs:
 
       - run: anchor build
 
+      - name: Fund deploy wallet on devnet
+        run: |
+          WALLET=$(solana-keygen pubkey ~/.config/solana/id.json)
+          # Request enough to cover the upgrade buffer (~3 SOL), retry on rate limiting.
+          # The buffer cost is refunded after each successful deploy so the wallet
+          # stays funded across runs; this is just a safety net.
+          for i in 1 2; do
+            solana airdrop 2 "$WALLET" --url devnet || true
+            sleep 2
+          done
+
       - name: Deploy to devnet
         run: anchor deploy --provider.cluster devnet
 
@@ -114,4 +125,3 @@ jobs:
           npm publish --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

@@ -35,6 +35,8 @@ pub enum CoordinationError {
     TimeoutNotElapsed,
 
     // Tournament
+    #[msg("Tournament end_time must be after start_time")]
+    InvalidTournamentTimes,
     #[msg("Tournament has not ended yet")]
     TournamentNotEnded,
     #[msg("Tournament must be finalized before rewards can be claimed")]

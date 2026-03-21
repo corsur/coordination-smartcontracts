@@ -54,12 +54,18 @@ pub fn resolve_homogenous(p1_guess: u8, p2_guess: u8, stake_lamports: u64) -> Re
             tournament_gain,
         })
     } else {
-        // Both forfeit
-        Ok(Resolution {
+        // Both forfeit — full 2× stake goes to tournament
+        let resolution = Resolution {
             p1_return: 0,
             p2_return: 0,
             tournament_gain: two_stakes,
-        })
+        };
+        // Postcondition: lamports conserved
+        require!(
+            resolution.tournament_gain == two_stakes,
+            CoordinationError::ArithmeticOverflow
+        );
+        Ok(resolution)
     }
 }
 

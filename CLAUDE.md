@@ -327,6 +327,7 @@ CannotJoinOwnGame           // player_two == player_one
 StakeMismatch               // lamports sent != stake_lamports
 CommitmentMismatch          // SHA-256(R) != stored commitment
 TimeoutNotElapsed           // resolve_timeout called too early
+InvalidTournamentTimes      // end_time <= start_time in create_tournament
 TournamentNotEnded          // finalize or claim called before end_time
 TournamentNotFinalized      // claim called before finalize_tournament
 EmptyPrizePool              // nothing to claim

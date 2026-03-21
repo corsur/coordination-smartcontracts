@@ -255,7 +255,8 @@ describe("coordination", () => {
     }
   });
 
-  it("both players reveal and the game resolves", async () => {
+  it("rejects reveal from non-participant", async () => {
+    const outsider = Keypair.generate();
     const revealAccounts = {
       game: gamePda,
       p1Profile: p1ProfilePda,
@@ -265,13 +266,70 @@ describe("coordination", () => {
       playerTwoWallet: player2.publicKey,
       systemProgram: SystemProgram.programId,
     };
+    try {
+      await program.methods
+        .revealGuess(p1Commit.r as any)
+        .accountsPartial({ ...revealAccounts, player: outsider.publicKey })
+        .signers([outsider])
+        .rpc();
+      assert.fail("Expected NotAParticipant error");
+    } catch (e: any) {
+      assert.include(e.toString(), "NotAParticipant");
+    }
+  });
 
+  it("player 1 reveals", async () => {
+    const revealAccounts = {
+      game: gamePda,
+      p1Profile: p1ProfilePda,
+      p2Profile: p2ProfilePda,
+      tournament: tournamentPda,
+      playerOneWallet: player1.publicKey,
+      playerTwoWallet: player2.publicKey,
+      systemProgram: SystemProgram.programId,
+    };
     await program.methods
       .revealGuess(p1Commit.r as any)
       .accountsPartial({ ...revealAccounts, player: player1.publicKey })
       .signers([player1])
       .rpc();
 
+    const game = await program.account.game.fetch(gamePda);
+    assert.equal(game.p1Guess, GUESS_HUMAN, "p1 guess should be recorded");
+  });
+
+  it("rejects double reveal from player 1", async () => {
+    const revealAccounts = {
+      game: gamePda,
+      p1Profile: p1ProfilePda,
+      p2Profile: p2ProfilePda,
+      tournament: tournamentPda,
+      playerOneWallet: player1.publicKey,
+      playerTwoWallet: player2.publicKey,
+      systemProgram: SystemProgram.programId,
+    };
+    try {
+      await program.methods
+        .revealGuess(p1Commit.r as any)
+        .accountsPartial({ ...revealAccounts, player: player1.publicKey })
+        .signers([player1])
+        .rpc();
+      assert.fail("Expected AlreadyRevealed error");
+    } catch (e: any) {
+      assert.include(e.toString(), "AlreadyRevealed");
+    }
+  });
+
+  it("player 2 reveals and the game resolves", async () => {
+    const revealAccounts = {
+      game: gamePda,
+      p1Profile: p1ProfilePda,
+      p2Profile: p2ProfilePda,
+      tournament: tournamentPda,
+      playerOneWallet: player1.publicKey,
+      playerTwoWallet: player2.publicKey,
+      systemProgram: SystemProgram.programId,
+    };
     await program.methods
       .revealGuess(p2Commit.r as any)
       .accountsPartial({ ...revealAccounts, player: player2.publicKey })
@@ -358,6 +416,75 @@ describe("coordination", () => {
       assert.fail("Expected CannotJoinOwnGame error");
     } catch (e: any) {
       assert.include(e.toString(), "CannotJoinOwnGame");
+    }
+  });
+
+  it("rejects resolve_timeout before timeout elapses", async () => {
+    // Create a fresh game and have p1 commit so the game is in Committing state
+    const counter = await program.account.gameCounter.fetch(gameCounterPda);
+    const timeoutGameId = counter.count as BN;
+    const [timeoutGamePda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("game"), timeoutGameId.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+    const [tp1ProfilePda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("player"), tournamentIdBuf(), player1.publicKey.toBuffer()],
+      program.programId
+    );
+    const [tp2ProfilePda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("player"), tournamentIdBuf(), player2.publicKey.toBuffer()],
+      program.programId
+    );
+
+    await program.methods
+      .createGame(STAKE)
+      .accountsPartial({
+        game: timeoutGamePda,
+        gameCounter: gameCounterPda,
+        playerProfile: tp1ProfilePda,
+        tournament: tournamentPda,
+        player: player1.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([player1])
+      .rpc();
+
+    await program.methods
+      .joinGame()
+      .accountsPartial({
+        game: timeoutGamePda,
+        playerProfile: tp2ProfilePda,
+        tournament: tournamentPda,
+        player: player2.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([player2])
+      .rpc();
+
+    const { commitment } = generateCommit(GUESS_HUMAN);
+    await program.methods
+      .commitGuess(commitment as any)
+      .accountsPartial({ game: timeoutGamePda, player: player1.publicKey })
+      .signers([player1])
+      .rpc();
+
+    // Game is now in Committing state; timeout has not elapsed
+    try {
+      await program.methods
+        .resolveTimeout()
+        .accountsPartial({
+          game: timeoutGamePda,
+          p1Profile: tp1ProfilePda,
+          p2Profile: tp2ProfilePda,
+          tournament: tournamentPda,
+          playerOneWallet: player1.publicKey,
+          playerTwoWallet: player2.publicKey,
+          caller: provider.wallet.publicKey,
+        })
+        .rpc();
+      assert.fail("Expected TimeoutNotElapsed error");
+    } catch (e: any) {
+      assert.include(e.toString(), "TimeoutNotElapsed");
     }
   });
 

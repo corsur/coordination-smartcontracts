@@ -12,7 +12,7 @@ pub fn create_tournament(
     let now = Clock::get()?.unix_timestamp;
     require!(
         end_time > start_time,
-        CoordinationError::OutsideTournamentWindow
+        CoordinationError::InvalidTournamentTimes
     );
     require!(end_time > now, CoordinationError::TournamentNotEnded);
 
@@ -32,7 +32,7 @@ pub fn create_tournament(
     require!(!t.finalized, CoordinationError::InvalidGameState);
     require!(
         t.end_time > t.start_time,
-        CoordinationError::OutsideTournamentWindow
+        CoordinationError::InvalidTournamentTimes
     );
 
     emit!(TournamentCreated {

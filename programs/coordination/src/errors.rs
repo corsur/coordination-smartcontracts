@@ -5,8 +5,6 @@ pub enum CoordinationError {
     // State machine
     #[msg("Invalid game state for this instruction")]
     InvalidGameState,
-    #[msg("Invalid state transition")]
-    InvalidStateTransition,
 
     // Player validation
     #[msg("Player is not a participant in this game")]

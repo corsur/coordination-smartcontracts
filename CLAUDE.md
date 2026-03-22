@@ -6,6 +6,8 @@ Solana program built with Anchor. Read the root `CLAUDE.md` before this file for
 
 **Rule 3 — unbounded resource consumption:** On-chain, collection sizes must be statically bounded. Never use `Vec::with_capacity(n)` where `n` comes from instruction input — every caller can force arbitrary allocation and exhaust compute budget.
 
+**Rule 11 — Checks-Effects-Interactions (CEI):** Instruction handlers must follow this order: (1) validate all preconditions; (2) apply all account state mutations; (3) perform lamport transfers and CPIs last. Never transfer lamports or call another program before all state changes are committed. A failed CPI after partial state mutation leaves accounts in an inconsistent state. In Anchor, this means `system_program::transfer` and `transfer_lamports` calls always come after every `account.field = value` assignment in the same handler.
+
 ---
 
 ## File and Module Structure

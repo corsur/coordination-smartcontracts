@@ -355,13 +355,12 @@ describe("coordination", () => {
     );
     assert.notEqual(game.resolvedAt.toString(), "0", "game should be resolved");
 
-    // Both correct in homogenous match → each gets 90% back, tournament gets 10% from each
+    // Both correct in homogenous match → full refund, tournament gains nothing
     const tournament = await program.account.tournament.fetch(tournamentPda);
-    const expectedPrize = STAKE.muln(2).divn(10);
     assert.equal(
       tournament.prizeLamports.toString(),
-      expectedPrize.toString(),
-      "tournament should have received 10% from each player"
+      "0",
+      "tournament should gain nothing when both players guess correctly"
     );
   });
 
@@ -655,7 +654,7 @@ describe("coordination", () => {
   // Heterogeneous game — different-team matchup
   // ---------------------------------------------------------------------------
 
-  it("heterogeneous game: p1 commits first, both correct → p1 gets ~1.9× stake", async () => {
+  it("heterogeneous game: p1 commits first, both correct → p1 gets full pot (2× stake)", async () => {
     // Create a fresh tournament for this test so we can run it in isolation
     const heteroTournamentId = new BN(2);
     const [heteroTournamentPda] = PublicKey.findProgramAddressSync(
@@ -811,23 +810,22 @@ describe("coordination", () => {
       "game should be resolved"
     );
 
-    // P1 committed first, both correct → p1 wins 1.9× stake
-    const expectedP1Return = STAKE.muln(19).divn(10); // 19_000_000
-    const p1BalanceAfter = await provider.connection.getBalance(
-      player1.publicKey
-    );
-    const p1Net = p1BalanceAfter - p1BalanceBefore;
-    // p1Net ≈ expectedP1Return - STAKE (stake was locked) minus tx fees
-    // We just check the tournament got its share
-    const expectedTournamentGain = new BN(2).mul(STAKE).sub(expectedP1Return); // 1_000_000
+    // P1 committed first, both correct → p1 wins full pot (2× stake), tournament gains nothing
+    const expectedP1Return = STAKE.muln(2); // 20_000_000
     const hetTournament = await program.account.tournament.fetch(
       heteroTournamentPda
     );
     assert.equal(
       hetTournament.prizeLamports.toString(),
-      expectedTournamentGain.toString(),
-      "tournament should have received stake/10"
+      "0",
+      "tournament should gain nothing in heterogeneous game"
     );
+
+    // P1 net balance should have increased by approximately stake (received 2S, spent S + tx fees)
+    const p1BalanceAfter = await provider.connection.getBalance(
+      player1.publicKey
+    );
+    assert.isAbove(p1BalanceAfter, p1BalanceBefore, "p1 should net gain stake");
 
     // P2 should receive nothing (lost)
     const p2BalanceAfter = await provider.connection.getBalance(
@@ -835,6 +833,171 @@ describe("coordination", () => {
     );
     // p2 net = -(stake + tx fees) — approximately, just check they didn't gain
     assert.isBelow(p2BalanceAfter, p2BalanceBefore, "p2 should lose stake");
+  });
+
+  it("heterogeneous game: both wrong → full refund, tournament gains nothing", async () => {
+    const bothWrongTournamentId = new BN(3);
+    const [bothWrongTournamentPda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("tournament"),
+        bothWrongTournamentId.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
+    const now = Math.floor(Date.now() / 1000);
+    await program.methods
+      .createTournament(
+        bothWrongTournamentId,
+        new BN(now - 60),
+        new BN(now + 3600)
+      )
+      .accountsPartial({
+        tournament: bothWrongTournamentPda,
+        authority: provider.wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const counter = await program.account.gameCounter.fetch(gameCounterPda);
+    const bothWrongGameId = counter.count as BN;
+    const [bothWrongGamePda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("game"), bothWrongGameId.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+    const bothWrongTournamentIdBuf = bothWrongTournamentId.toArrayLike(
+      Buffer,
+      "le",
+      8
+    );
+    const [bwP1ProfilePda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("player"),
+        bothWrongTournamentIdBuf,
+        player1.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+    const [bwP2ProfilePda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("player"),
+        bothWrongTournamentIdBuf,
+        player2.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    // Capture balances before stake is locked
+    const p1BalanceBefore = await provider.connection.getBalance(
+      player1.publicKey
+    );
+    const p2BalanceBefore = await provider.connection.getBalance(
+      player2.publicKey
+    );
+
+    // Create game with matchup_type = 1 (different teams)
+    await program.methods
+      .createGame(STAKE, GUESS_DIFF_TEAM)
+      .accountsPartial({
+        game: bothWrongGamePda,
+        gameCounter: gameCounterPda,
+        playerProfile: bwP1ProfilePda,
+        tournament: bothWrongTournamentPda,
+        player: player1.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([player1])
+      .rpc();
+
+    await program.methods
+      .joinGame()
+      .accountsPartial({
+        game: bothWrongGamePda,
+        playerProfile: bwP2ProfilePda,
+        tournament: bothWrongTournamentPda,
+        player: player2.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([player2])
+      .rpc();
+
+    // Both commit SAME_TEAM (0 = wrong for a heterogeneous match)
+    const bwP1Commit = generateCommit(GUESS_SAME_TEAM);
+    const bwP2Commit = generateCommit(GUESS_SAME_TEAM);
+
+    await program.methods
+      .commitGuess(bwP1Commit.commitment as any)
+      .accountsPartial({ game: bothWrongGamePda, player: player1.publicKey })
+      .signers([player1])
+      .rpc();
+
+    await program.methods
+      .commitGuess(bwP2Commit.commitment as any)
+      .accountsPartial({ game: bothWrongGamePda, player: player2.publicKey })
+      .signers([player2])
+      .rpc();
+
+    // Both reveal
+    const bwRevealAccounts = {
+      game: bothWrongGamePda,
+      p1Profile: bwP1ProfilePda,
+      p2Profile: bwP2ProfilePda,
+      tournament: bothWrongTournamentPda,
+      playerOneWallet: player1.publicKey,
+      playerTwoWallet: player2.publicKey,
+      systemProgram: SystemProgram.programId,
+    };
+
+    await program.methods
+      .revealGuess(bwP1Commit.r as any)
+      .accountsPartial({ ...bwRevealAccounts, player: player1.publicKey })
+      .signers([player1])
+      .rpc();
+
+    await program.methods
+      .revealGuess(bwP2Commit.r as any)
+      .accountsPartial({ ...bwRevealAccounts, player: player2.publicKey })
+      .signers([player2])
+      .rpc();
+
+    // Both wrong → both get stake back, tournament gains nothing
+    const bwTournament = await program.account.tournament.fetch(
+      bothWrongTournamentPda
+    );
+    assert.equal(
+      bwTournament.prizeLamports.toString(),
+      "0",
+      "tournament should gain nothing when both players guess wrong in hetero match"
+    );
+
+    // Both players should roughly break even (each paid stake, each received stake back, minus tx fees)
+    const p1BalanceAfter = await provider.connection.getBalance(
+      player1.publicKey
+    );
+    const p2BalanceAfter = await provider.connection.getBalance(
+      player2.publicKey
+    );
+    assert.isBelow(
+      p1BalanceAfter,
+      p1BalanceBefore,
+      "p1 pays tx fees but gets stake refunded"
+    );
+    assert.isBelow(
+      p2BalanceAfter,
+      p2BalanceBefore,
+      "p2 pays tx fees but gets stake refunded"
+    );
+    // Refund means the loss is small (just tx fees), not a full stake loss
+    const stakeNum = STAKE.toNumber();
+    assert.isAbove(
+      p1BalanceAfter,
+      p1BalanceBefore - stakeNum,
+      "p1 should not lose full stake"
+    );
+    assert.isAbove(
+      p2BalanceAfter,
+      p2BalanceBefore - stakeNum,
+      "p2 should not lose full stake"
+    );
   });
 
   it("rejects create_game outside tournament window", async () => {

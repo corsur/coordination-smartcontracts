@@ -12,8 +12,8 @@ pub struct Resolution {
 /// Correct guess = GUESS_SAME_TEAM (0), since both players are on the same team.
 ///
 /// Payoffs:
-///   Both correct: each receives 90% of stake; house takes 10% from each (20% total)
-///   At least one wrong: both forfeit; house takes 100% from each (200% total)
+///   Both correct: each receives full stake back; tournament gains nothing
+///   At least one wrong: both forfeit; tournament takes 100% from each (200% total)
 ///
 /// Invariant: p1_return + p2_return + tournament_gain == 2 * stake_lamports
 pub fn resolve_homogenous(p1_guess: u8, p2_guess: u8, stake_lamports: u64) -> Result<Resolution> {
@@ -28,31 +28,19 @@ pub fn resolve_homogenous(p1_guess: u8, p2_guess: u8, stake_lamports: u64) -> Re
         p1_guess == crate::state::GUESS_SAME_TEAM && p2_guess == crate::state::GUESS_SAME_TEAM;
 
     if both_correct {
-        // 90% return: stake * 9 / 10
-        // Fee computed as remainder to avoid rounding loss
-        let each_return = stake_lamports
-            .checked_mul(9)
-            .and_then(|v| v.checked_div(10))
-            .ok_or(CoordinationError::ArithmeticOverflow)?;
-        let fee = stake_lamports
-            .checked_sub(each_return)
-            .ok_or(CoordinationError::ArithmeticOverflow)?;
-        let tournament_gain = fee
-            .checked_mul(2)
-            .ok_or(CoordinationError::ArithmeticOverflow)?;
-
-        // Assert invariant
-        let total = each_return
-            .checked_add(each_return)
-            .and_then(|v| v.checked_add(tournament_gain))
+        // Full refund: each player gets their stake back; tournament gains nothing
+        let resolution = Resolution {
+            p1_return: stake_lamports,
+            p2_return: stake_lamports,
+            tournament_gain: 0,
+        };
+        // Assert invariant: S + S + 0 == 2S
+        let total = resolution
+            .p1_return
+            .checked_add(resolution.p2_return)
             .ok_or(CoordinationError::ArithmeticOverflow)?;
         require!(total == two_stakes, CoordinationError::ArithmeticOverflow);
-
-        Ok(Resolution {
-            p1_return: each_return,
-            p2_return: each_return,
-            tournament_gain,
-        })
+        Ok(resolution)
     } else {
         // Both forfeit — full 2× stake goes to tournament
         let resolution = Resolution {
@@ -74,15 +62,17 @@ pub fn resolve_homogenous(p1_guess: u8, p2_guess: u8, stake_lamports: u64) -> Re
 /// Correct guess = GUESS_DIFF_TEAM (1), since the players are on different teams.
 ///
 /// Winner determination:
-///   - If exactly one player is wrong: the wrong player loses; the correct player wins
-///   - If both correct or both wrong: first committer wins (recorded on-chain)
+///   - Both wrong: full refund to both; tournament gains nothing
+///   - If exactly one player is wrong: the correct player wins the full pot
+///   - If both correct: first committer wins the full pot
 ///
 /// Payoffs:
-///   Winner return: stake * 19 / 10  (1.9× stake — net gain of 0.9× opponent's stake)
+///   Winner return: 2 × stake  (full pot)
 ///   Loser return: 0
-///   Tournament gain: 2 * stake - winner_return  (= stake / 10)
+///   Tournament gain: 0
+///   Both-wrong case: each receives full stake back; tournament gains nothing
 ///
-/// Invariant: winner_return + 0 + tournament_gain == 2 * stake_lamports
+/// Invariant: p1_return + p2_return + tournament_gain == 2 * stake_lamports
 pub fn resolve_heterogeneous(
     p1_guess: u8,
     p2_guess: u8,
@@ -101,45 +91,57 @@ pub fn resolve_heterogeneous(
         .checked_mul(2)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
 
-    // Winner return = 1.9× stake; tournament_gain = remainder to avoid rounding loss
-    let winner_return = stake_lamports
-        .checked_mul(19)
-        .and_then(|v| v.checked_div(10))
-        .ok_or(CoordinationError::ArithmeticOverflow)?;
-    let tournament_gain = two_stakes
-        .checked_sub(winner_return)
-        .ok_or(CoordinationError::ArithmeticOverflow)?;
-
-    // Assert invariant before branching
-    let total = winner_return
-        .checked_add(tournament_gain)
-        .ok_or(CoordinationError::ArithmeticOverflow)?;
-    require!(total == two_stakes, CoordinationError::ArithmeticOverflow);
-
     let p1_correct = p1_guess == crate::state::GUESS_DIFF_TEAM;
     let p2_correct = p2_guess == crate::state::GUESS_DIFF_TEAM;
 
-    // If exactly one is wrong, the correct player wins regardless of commit order.
-    // Otherwise (both correct or both wrong), first committer wins.
+    // Both wrong: full refund, tournament gains nothing
+    if !p1_correct && !p2_correct {
+        let resolution = Resolution {
+            p1_return: stake_lamports,
+            p2_return: stake_lamports,
+            tournament_gain: 0,
+        };
+        // Postcondition: S + S + 0 == 2S
+        let total = resolution
+            .p1_return
+            .checked_add(resolution.p2_return)
+            .ok_or(CoordinationError::ArithmeticOverflow)?;
+        require!(total == two_stakes, CoordinationError::ArithmeticOverflow);
+        return Ok(resolution);
+    }
+
+    // Winner takes full pot (2S); loser gets nothing; tournament gains nothing.
+    // If exactly one wrong: correct player wins regardless of commit order.
+    // If both correct: first committer wins.
     let p1_wins = if p1_correct == p2_correct {
         first_committer == 1
     } else {
         p1_correct
     };
 
-    if p1_wins {
-        Ok(Resolution {
-            p1_return: winner_return,
+    let resolution = if p1_wins {
+        Resolution {
+            p1_return: two_stakes,
             p2_return: 0,
-            tournament_gain,
-        })
+            tournament_gain: 0,
+        }
     } else {
-        Ok(Resolution {
+        Resolution {
             p1_return: 0,
-            p2_return: winner_return,
-            tournament_gain,
-        })
-    }
+            p2_return: two_stakes,
+            tournament_gain: 0,
+        }
+    };
+
+    // Assert invariant: winner_return + 0 + 0 == 2S
+    let total = resolution
+        .p1_return
+        .checked_add(resolution.p2_return)
+        .and_then(|v| v.checked_add(resolution.tournament_gain))
+        .ok_or(CoordinationError::ArithmeticOverflow)?;
+    require!(total == two_stakes, CoordinationError::ArithmeticOverflow);
+
+    Ok(resolution)
 }
 
 /// Routes to the appropriate payoff function based on matchup_type.
@@ -184,12 +186,12 @@ mod tests {
     // ---------------------------------------------------------------------------
 
     #[test]
-    fn both_correct_returns_90_percent() {
+    fn both_correct_full_refund() {
         let stake = 1_000_000; // 0.001 SOL
         let r = resolve_homogenous(GUESS_SAME_TEAM, GUESS_SAME_TEAM, stake).unwrap();
-        assert_eq!(r.p1_return, 900_000);
-        assert_eq!(r.p2_return, 900_000);
-        assert_eq!(r.tournament_gain, 200_000);
+        assert_eq!(r.p1_return, stake);
+        assert_eq!(r.p2_return, stake);
+        assert_eq!(r.tournament_gain, 0);
         assert_invariant(&r, stake);
     }
 
@@ -245,22 +247,22 @@ mod tests {
     #[test]
     fn hetero_both_correct_p1_commits_first_p1_wins() {
         let stake = 1_000_000;
-        // Both correct, p1 committed first → p1 wins
+        // Both correct, p1 committed first → p1 wins full pot
         let r = resolve_heterogeneous(GUESS_DIFF_TEAM, GUESS_DIFF_TEAM, stake, 1).unwrap();
-        assert_eq!(r.p1_return, 1_900_000); // 1.9× stake
+        assert_eq!(r.p1_return, 2_000_000); // 2× stake
         assert_eq!(r.p2_return, 0);
-        assert_eq!(r.tournament_gain, 100_000); // stake/10
+        assert_eq!(r.tournament_gain, 0);
         assert_invariant(&r, stake);
     }
 
     #[test]
     fn hetero_both_correct_p2_commits_first_p2_wins() {
         let stake = 1_000_000;
-        // Both correct, p2 committed first → p2 wins
+        // Both correct, p2 committed first → p2 wins full pot
         let r = resolve_heterogeneous(GUESS_DIFF_TEAM, GUESS_DIFF_TEAM, stake, 2).unwrap();
         assert_eq!(r.p1_return, 0);
-        assert_eq!(r.p2_return, 1_900_000);
-        assert_eq!(r.tournament_gain, 100_000);
+        assert_eq!(r.p2_return, 2_000_000);
+        assert_eq!(r.tournament_gain, 0);
         assert_invariant(&r, stake);
     }
 
@@ -270,12 +272,14 @@ mod tests {
         // P1 wrong, p2 correct → p2 wins regardless of who committed first
         let r1 = resolve_heterogeneous(GUESS_SAME_TEAM, GUESS_DIFF_TEAM, stake, 1).unwrap();
         assert_eq!(r1.p1_return, 0);
-        assert_eq!(r1.p2_return, 1_900_000);
+        assert_eq!(r1.p2_return, 2_000_000);
+        assert_eq!(r1.tournament_gain, 0);
         assert_invariant(&r1, stake);
 
         let r2 = resolve_heterogeneous(GUESS_SAME_TEAM, GUESS_DIFF_TEAM, stake, 2).unwrap();
         assert_eq!(r2.p1_return, 0);
-        assert_eq!(r2.p2_return, 1_900_000);
+        assert_eq!(r2.p2_return, 2_000_000);
+        assert_eq!(r2.tournament_gain, 0);
         assert_invariant(&r2, stake);
     }
 
@@ -284,33 +288,26 @@ mod tests {
         let stake = 1_000_000;
         // P2 wrong, p1 correct → p1 wins regardless of who committed first
         let r1 = resolve_heterogeneous(GUESS_DIFF_TEAM, GUESS_SAME_TEAM, stake, 1).unwrap();
-        assert_eq!(r1.p1_return, 1_900_000);
+        assert_eq!(r1.p1_return, 2_000_000);
         assert_eq!(r1.p2_return, 0);
+        assert_eq!(r1.tournament_gain, 0);
         assert_invariant(&r1, stake);
 
         let r2 = resolve_heterogeneous(GUESS_DIFF_TEAM, GUESS_SAME_TEAM, stake, 2).unwrap();
-        assert_eq!(r2.p1_return, 1_900_000);
+        assert_eq!(r2.p1_return, 2_000_000);
         assert_eq!(r2.p2_return, 0);
+        assert_eq!(r2.tournament_gain, 0);
         assert_invariant(&r2, stake);
     }
 
     #[test]
-    fn hetero_both_wrong_p1_commits_first_p1_wins() {
+    fn hetero_both_wrong_full_refund() {
         let stake = 1_000_000;
-        // Both wrong, p1 committed first → p1 wins (first inaccurate wins)
+        // Both wrong → full refund to both; commit order doesn't matter
         let r = resolve_heterogeneous(GUESS_SAME_TEAM, GUESS_SAME_TEAM, stake, 1).unwrap();
-        assert_eq!(r.p1_return, 1_900_000);
-        assert_eq!(r.p2_return, 0);
-        assert_invariant(&r, stake);
-    }
-
-    #[test]
-    fn hetero_both_wrong_p2_commits_first_p2_wins() {
-        let stake = 1_000_000;
-        // Both wrong, p2 committed first → p2 wins
-        let r = resolve_heterogeneous(GUESS_SAME_TEAM, GUESS_SAME_TEAM, stake, 2).unwrap();
-        assert_eq!(r.p1_return, 0);
-        assert_eq!(r.p2_return, 1_900_000);
+        assert_eq!(r.p1_return, stake);
+        assert_eq!(r.p2_return, stake);
+        assert_eq!(r.tournament_gain, 0);
         assert_invariant(&r, stake);
     }
 
@@ -350,16 +347,18 @@ mod tests {
     fn resolve_game_routes_homogenous() {
         let stake = 1_000_000;
         let r = resolve_game(0, GUESS_SAME_TEAM, GUESS_SAME_TEAM, stake, 1).unwrap();
-        assert_eq!(r.p1_return, 900_000);
-        assert_eq!(r.p2_return, 900_000);
+        assert_eq!(r.p1_return, stake);
+        assert_eq!(r.p2_return, stake);
+        assert_eq!(r.tournament_gain, 0);
     }
 
     #[test]
     fn resolve_game_routes_heterogeneous() {
         let stake = 1_000_000;
         let r = resolve_game(1, GUESS_DIFF_TEAM, GUESS_DIFF_TEAM, stake, 1).unwrap();
-        assert_eq!(r.p1_return, 1_900_000);
+        assert_eq!(r.p1_return, 2_000_000);
         assert_eq!(r.p2_return, 0);
+        assert_eq!(r.tournament_gain, 0);
     }
 
     #[test]

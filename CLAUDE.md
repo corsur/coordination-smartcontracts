@@ -257,17 +257,18 @@ Let `S = stake_lamports`. A correct guess means guessing the actual `matchup_typ
 
 | Outcome | P1 return | P2 return | Tournament receives |
 |---|---|---|---|
-| Both guess correctly (both guess 0) | `S * 9 / 10` | `S * 9 / 10` | `S * 2 / 10` |
+| Both guess correctly (both guess 0) | `S` | `S` | `0` |
 | At least one wrong | `0` | `0` | `2 * S` |
 
 **Different teams (matchup_type = 1) — adversarial:**
 
-Winner rule: if exactly one player is wrong, the wrong player loses. If both correct or both wrong, the first committer wins.
+Winner rule: if exactly one player is wrong, the correct player wins. If both correct, the first committer wins. If both wrong, full refund to both.
 
-| Outcome | Winner return | Loser return | Tournament receives |
+| Outcome | P1 return | P2 return | Tournament receives |
 |---|---|---|---|
-| One correct, one wrong | correct player: `S * 19 / 10` | `0` | `2*S - S*19/10` |
-| Both correct or both wrong | first committer: `S * 19 / 10` | `0` | `2*S - S*19/10` |
+| One correct, one wrong | correct: `2*S` / wrong: `0` | wrong: `0` / correct: `2*S` | `0` |
+| Both correct | first committer: `2*S` | `0` (if p2 first: `2*S`) | `0` |
+| Both wrong | `S` | `S` | `0` |
 
 All arithmetic uses `checked_mul` / `checked_div`. Lamport conservation is asserted as an invariant after each resolution.
 

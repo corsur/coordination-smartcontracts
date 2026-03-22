@@ -34,8 +34,28 @@ pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
     );
 
     let stake_lamports = ctx.accounts.game.stake_lamports;
+    let player_key = ctx.accounts.player.key();
 
-    // Transfer player 2 stake into the game PDA
+    // Effects: commit state before the CPI transfer
+    ctx.accounts.game.player_two = player_key;
+    ctx.accounts.game.state = GameState::Active;
+
+    // Postcondition: game must now be Active with both players set
+    require!(
+        ctx.accounts.game.state == GameState::Active,
+        CoordinationError::InvalidGameState
+    );
+    require!(
+        ctx.accounts.game.player_two != Pubkey::default(),
+        CoordinationError::InvalidGameState
+    );
+
+    // Capture values needed for the event before the CPI borrows accounts
+    let game_id = ctx.accounts.game.game_id;
+    let tournament_id = ctx.accounts.game.tournament_id;
+    let player_one = ctx.accounts.game.player_one;
+
+    // Interactions: transfer player 2 stake into the game PDA
     system_program::transfer(
         CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
@@ -47,25 +67,11 @@ pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
         stake_lamports,
     )?;
 
-    let game = &mut ctx.accounts.game;
-    game.player_two = ctx.accounts.player.key();
-    game.state = GameState::Active;
-
-    // Postcondition: game must now be Active with both players set
-    require!(
-        game.state == GameState::Active,
-        CoordinationError::InvalidGameState
-    );
-    require!(
-        game.player_two != Pubkey::default(),
-        CoordinationError::InvalidGameState
-    );
-
     emit!(GameStarted {
-        game_id: game.game_id,
-        tournament_id: game.tournament_id,
-        player_one: game.player_one,
-        player_two: game.player_two,
+        game_id,
+        tournament_id,
+        player_one,
+        player_two: player_key,
     });
     Ok(())
 }

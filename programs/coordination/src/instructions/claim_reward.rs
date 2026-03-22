@@ -41,13 +41,7 @@ pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
 
     require!(entitlement > 0, CoordinationError::EmptyPrizePool);
 
-    // Transfer entitlement from tournament PDA to player wallet
-    transfer_lamports(
-        &ctx.accounts.tournament.to_account_info(),
-        &ctx.accounts.player.to_account_info(),
-        entitlement,
-    )?;
-
+    // Effects: mark claimed before the transfer to follow CEI ordering
     ctx.accounts.player_profile.claimed = true;
 
     // Postcondition: claimed flag must be set; prevents double-claim
@@ -55,6 +49,13 @@ pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
         ctx.accounts.player_profile.claimed,
         CoordinationError::InvalidGameState
     );
+
+    // Interactions: transfer entitlement from tournament PDA to player wallet
+    transfer_lamports(
+        &ctx.accounts.tournament.to_account_info(),
+        &ctx.accounts.player.to_account_info(),
+        entitlement,
+    )?;
 
     emit!(RewardClaimed {
         tournament_id: tournament.tournament_id,

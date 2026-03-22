@@ -72,34 +72,39 @@ fn finalize_game(ctx: Context<RevealGuess>) -> Result<()> {
 
     let (p1_return, p2_return, tournament_gain) =
         compute_returns(game, now, ctx.accounts.tournament.end_time)?;
-
-    distribute_lamports(&ctx, p1_return, p2_return, tournament_gain)?;
-    apply_tournament_update(&mut ctx.accounts.tournament, tournament_gain)?;
+    // `game` borrow ends here (NLL — last use above)
 
     let p1_won = p1_return > p2_return;
     let p2_won = p2_return > p1_return;
+
+    // Effects: apply all state mutations before any lamport transfers
+    apply_tournament_update(&mut ctx.accounts.tournament, tournament_gain)?;
     ctx.accounts
         .p1_profile
         .update_after_game(p1_won, tournament_id)?;
     ctx.accounts
         .p2_profile
         .update_after_game(p2_won, tournament_id)?;
-
-    let game = &mut ctx.accounts.game;
-    game.state = GameState::Resolved;
-    game.resolved_at = now;
+    ctx.accounts.game.state = GameState::Resolved;
+    ctx.accounts.game.resolved_at = now;
 
     // Postcondition: game must be resolved and timestamped
     require!(
-        game.state == GameState::Resolved,
+        ctx.accounts.game.state == GameState::Resolved,
         CoordinationError::InvalidGameState
     );
-    require!(game.resolved_at == now, CoordinationError::InvalidGameState);
+    require!(
+        ctx.accounts.game.resolved_at == now,
+        CoordinationError::InvalidGameState
+    );
+
+    // Interactions: lamport transfers after all state is committed
+    distribute_lamports(&ctx, p1_return, p2_return, tournament_gain)?;
 
     emit!(GameResolved {
         game_id,
-        p1_guess: game.p1_guess,
-        p2_guess: game.p2_guess,
+        p1_guess: ctx.accounts.game.p1_guess,
+        p2_guess: ctx.accounts.game.p2_guess,
         p1_return,
         p2_return,
         tournament_gain,

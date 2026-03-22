@@ -16,72 +16,81 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
     let outcome = find_timeout(game, current_slot)?;
 
     let tournament_id = ctx.accounts.tournament.tournament_id;
-    let game_info = ctx.accounts.game.to_account_info();
-    let tournament_info = ctx.accounts.tournament.to_account_info();
 
-    // Distribute lamports and record which players won/lost
-    let (tournament_gain, slashed_player, p1_won, p2_won) = match outcome {
+    // Compute outcome values and capture AccountInfo handles before mutable borrows
+    let stake_lamports = game.stake_lamports;
+    let (tournament_gain, slashed_player, p1_won, p2_won, winner_wallet) = match outcome {
         TimeoutOutcome::OneWinner {
             slashed_player,
             winner_is_p1,
         } => {
-            // Slash the non-participating player; return the winner's stake
-            transfer_lamports(&game_info, &tournament_info, game.stake_lamports)?;
             let winner_wallet = if winner_is_p1 {
-                ctx.accounts.player_one_wallet.to_account_info()
+                Some(ctx.accounts.player_one_wallet.to_account_info())
             } else {
-                ctx.accounts.player_two_wallet.to_account_info()
+                Some(ctx.accounts.player_two_wallet.to_account_info())
             };
-            transfer_lamports(&game_info, &winner_wallet, game.stake_lamports)?;
             (
-                game.stake_lamports,
+                stake_lamports,
                 slashed_player,
                 winner_is_p1,
                 !winner_is_p1,
+                winner_wallet,
             )
         }
         TimeoutOutcome::BothForfeited => {
-            // Neither player revealed — both stakes go to tournament, no winner
-            let both_stakes = game
-                .stake_lamports
+            // Report player_one as canonical slashed address; both were slashed
+            let both_stakes = stake_lamports
                 .checked_mul(2)
                 .ok_or(CoordinationError::ArithmeticOverflow)?;
-            transfer_lamports(&game_info, &tournament_info, both_stakes)?;
-            // Report player_one as canonical slashed address; both were slashed
-            (both_stakes, game.player_one, false, false)
+            (both_stakes, game.player_one, false, false, None)
         }
     };
+    // `game` borrow ends here (NLL — last use above)
 
+    let game_info = ctx.accounts.game.to_account_info();
+    let tournament_info = ctx.accounts.tournament.to_account_info();
+
+    // Effects: apply all state mutations before any lamport transfers
     ctx.accounts
         .p1_profile
         .update_after_game(p1_won, tournament_id)?;
     ctx.accounts
         .p2_profile
         .update_after_game(p2_won, tournament_id)?;
-
-    let tournament = &mut ctx.accounts.tournament;
-    tournament.prize_lamports = tournament
+    ctx.accounts.tournament.prize_lamports = ctx
+        .accounts
+        .tournament
         .prize_lamports
         .checked_add(tournament_gain)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
-    tournament.game_count = tournament
+    ctx.accounts.tournament.game_count = ctx
+        .accounts
+        .tournament
         .game_count
         .checked_add(1)
         .ok_or(CoordinationError::ArithmeticOverflow)?;
-
-    let game = &mut ctx.accounts.game;
-    game.state = GameState::Resolved;
-    game.resolved_at = now;
+    let game_id = ctx.accounts.game.game_id;
+    ctx.accounts.game.state = GameState::Resolved;
+    ctx.accounts.game.resolved_at = now;
 
     // Postconditions: game must be resolved and timestamped
     require!(
-        game.state == GameState::Resolved,
+        ctx.accounts.game.state == GameState::Resolved,
         CoordinationError::InvalidGameState
     );
-    require!(game.resolved_at == now, CoordinationError::InvalidGameState);
+    require!(
+        ctx.accounts.game.resolved_at == now,
+        CoordinationError::InvalidGameState
+    );
+
+    // Interactions: lamport transfers after all state is committed
+    transfer_lamports(&game_info, &tournament_info, tournament_gain)?;
+    if let Some(winner) = winner_wallet {
+        transfer_lamports(&game_info, &winner, stake_lamports)?;
+    }
 
     emit!(TimeoutSlash {
-        game_id: game.game_id,
+        game_id,
         slashed_player,
         slash_amount: tournament_gain,
     });

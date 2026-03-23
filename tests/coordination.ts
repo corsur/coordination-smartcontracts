@@ -61,10 +61,7 @@ describe("coordination", () => {
     return TOURNAMENT_ID.toArrayLike(Buffer, "le", 8);
   }
 
-  function escrowPda(
-    tournamentId: BN,
-    player: PublicKey
-  ): [PublicKey, number] {
+  function escrowPda(tournamentId: BN, player: PublicKey): [PublicKey, number] {
     return PublicKey.findProgramAddressSync(
       [
         Buffer.from("escrow"),

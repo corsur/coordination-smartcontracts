@@ -12,7 +12,7 @@ pub mod state;
 
 use instructions::*;
 
-declare_id!("JCvfXKyarwrW3Nbi1ud2LRjfCTv2MX6tDePheG4oYRES");
+declare_id!("2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi");
 
 // --- Constants ---
 pub const CHALLENGE_WINDOW_SECONDS: i64 = 86_400; // 24 hours

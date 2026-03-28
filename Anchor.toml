@@ -7,11 +7,11 @@ skip-lint = false
 
 [programs.localnet]
 coordination = "2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P"
-shillbot = "JCvfXKyarwrW3Nbi1ud2LRjfCTv2MX6tDePheG4oYRES"
+shillbot = "2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi"
 
 [programs.devnet]
 coordination = "2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P"
-shillbot = "JCvfXKyarwrW3Nbi1ud2LRjfCTv2MX6tDePheG4oYRES"
+shillbot = "2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi"
 
 [registry]
 url = "https://api.apr.dev"

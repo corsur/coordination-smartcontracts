@@ -42,7 +42,10 @@ jobs:
           mkdir -p ~/.config/solana
           solana-keygen new --no-bip39-passphrase --silent -o ~/.config/solana/id.json
 
-      - run: anchor build
+      - name: Build programs individually (shared crate is a library, not a program)
+        run: |
+          anchor build -p coordination
+          anchor build -p shillbot
 
       - run: npm run lint
 
@@ -94,7 +97,10 @@ jobs:
           mkdir -p target/deploy
           echo '${{ secrets.ANCHOR_PROGRAM_KEYPAIR }}' > target/deploy/coordination-keypair.json
 
-      - run: anchor build
+      - name: Build programs individually
+        run: |
+          anchor build -p coordination
+          anchor build -p shillbot
 
       - name: Close orphaned buffer accounts
         run: |

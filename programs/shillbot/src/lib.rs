@@ -16,7 +16,10 @@ declare_id!("2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi");
 
 // --- Constants ---
 pub const CHALLENGE_WINDOW_SECONDS: i64 = 86_400; // 24 hours
+pub const STALENESS_WINDOW_SECONDS: i64 = 86_400; // 1 day tolerance for oracle attestation
+pub const SEVEN_DAYS_SECONDS: i64 = 604_800; // 7 days — expected oracle attestation delay
 pub const VERIFICATION_TIMEOUT_SECONDS: i64 = 1_209_600; // 14 days
+pub const MAX_EMERGENCY_RETURN_ACCOUNTS: usize = 20;
 pub const MAX_CONCURRENT_CLAIMS: u8 = 5;
 pub const MIN_CLAIM_BUFFER_SECONDS: i64 = 14_400; // 4 hours
 pub const FREE_CHALLENGE_PERCENT: u16 = 20; // 20% of campaign tasks
@@ -39,11 +42,6 @@ pub mod shillbot {
             quality_threshold,
             starting_counter,
         )
-    }
-
-    /// One-time migration: close old GlobalState for re-init. Remove after devnet migration.
-    pub fn migrate_global(ctx: Context<MigrateGlobal>) -> Result<()> {
-        instructions::migrate_global::migrate_global(ctx)
     }
 
     pub fn update_params(

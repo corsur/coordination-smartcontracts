@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 use crate::errors::ShillbotError;
 use crate::events::EmergencyReturn;
 use crate::state::{GlobalState, Task, TaskState};
+use crate::MAX_EMERGENCY_RETURN_ACCOUNTS;
 
 /// Squads multisig only. Returns escrow for Open/Claimed tasks.
 /// Accepts task accounts as remaining_accounts.
@@ -26,7 +27,7 @@ pub fn emergency_return(ctx: Context<EmergencyReturnAccounts>) -> Result<()> {
 
     // Bounded iteration: limit remaining accounts
     require!(
-        ctx.remaining_accounts.len() <= 20,
+        ctx.remaining_accounts.len() <= MAX_EMERGENCY_RETURN_ACCOUNTS,
         ShillbotError::ArithmeticOverflow
     );
 
@@ -97,12 +98,24 @@ pub fn emergency_return(ctx: Context<EmergencyReturnAccounts>) -> Result<()> {
                     let mut task_data = task_info.try_borrow_mut_data()?;
                     task_data.fill(0);
                 } else {
+                    msg!(
+                        "emergency_return: skipped account at index {} (deserialization failed)",
+                        i
+                    );
                     drop(data);
                 }
             } else {
+                msg!(
+                    "emergency_return: skipped account at index {} (discriminator mismatch)",
+                    i
+                );
                 drop(data);
             }
         } else {
+            msg!(
+                "emergency_return: skipped account at index {} (insufficient data length)",
+                i
+            );
             drop(data);
         }
 

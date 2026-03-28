@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// Maximum composite score value (fixed-point 1e6).
 pub const MAX_SCORE: u64 = 1_000_000;
 

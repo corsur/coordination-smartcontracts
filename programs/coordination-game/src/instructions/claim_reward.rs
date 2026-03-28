@@ -27,16 +27,18 @@ pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
     );
 
     // Proportional entitlement: (player_score / total_score) * prize_snapshot
-    // Integer math: prize_snapshot * player_score / total_score_snapshot
+    // Use u128 intermediates to prevent overflow on large prize * score products.
     let entitlement = if tournament.total_score_snapshot == 0 {
         0u64
     } else {
-        tournament
-            .prize_snapshot
-            .checked_mul(profile.score)
-            .ok_or(CoordinationError::ArithmeticOverflow)?
-            .checked_div(tournament.total_score_snapshot)
-            .ok_or(CoordinationError::ArithmeticOverflow)?
+        u64::try_from(
+            (tournament.prize_snapshot as u128)
+                .checked_mul(profile.score as u128)
+                .ok_or(CoordinationError::ArithmeticOverflow)?
+                .checked_div(tournament.total_score_snapshot as u128)
+                .ok_or(CoordinationError::ArithmeticOverflow)?,
+        )
+        .map_err(|_| CoordinationError::ArithmeticOverflow)?
     };
 
     require!(entitlement > 0, CoordinationError::EmptyPrizePool);

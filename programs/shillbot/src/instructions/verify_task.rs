@@ -4,7 +4,7 @@ use crate::errors::ShillbotError;
 use crate::events::TaskVerified;
 use crate::scoring::compute_payment;
 use crate::state::{GlobalState, Task, TaskState};
-use crate::CHALLENGE_WINDOW_SECONDS;
+use crate::{CHALLENGE_WINDOW_SECONDS, SEVEN_DAYS_SECONDS, STALENESS_WINDOW_SECONDS};
 
 /// Oracle attestation records the composite score and computes payment.
 ///
@@ -34,19 +34,17 @@ pub fn verify_task(ctx: Context<VerifyTask>, composite_score: u64) -> Result<()>
         ShillbotError::ScoreOutOfBounds
     );
 
-    // Checks: staleness — attestation within 14 days of submitted_at + 7 days
+    // Checks: staleness — attestation within STALENESS_WINDOW of submitted_at + 7 days
     // (the oracle should attest around T+7d, but we allow a window)
-    let seven_days: i64 = 604_800;
     let expected_attestation_time = task
         .submitted_at
-        .checked_add(seven_days)
+        .checked_add(SEVEN_DAYS_SECONDS)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
-    let staleness_window: i64 = 86_400; // 1 day tolerance
     let earliest = expected_attestation_time
-        .checked_sub(staleness_window)
+        .checked_sub(STALENESS_WINDOW_SECONDS)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
     let latest = expected_attestation_time
-        .checked_add(staleness_window)
+        .checked_add(STALENESS_WINDOW_SECONDS)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
     require!(
         clock.unix_timestamp >= earliest && clock.unix_timestamp <= latest,

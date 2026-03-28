@@ -8,6 +8,7 @@ pub fn initialize(
     ctx: Context<Initialize>,
     protocol_fee_bps: u16,
     quality_threshold: u64,
+    starting_counter: u64,
 ) -> Result<()> {
     // Checks
     require!(
@@ -25,7 +26,7 @@ pub fn initialize(
 
     // Effects
     let global = &mut ctx.accounts.global_state;
-    global.task_counter = 0;
+    global.task_counter = starting_counter;
     global.authority = ctx.accounts.authority.key();
     global.treasury = ctx.accounts.treasury.key();
     global.protocol_fee_bps = protocol_fee_bps;

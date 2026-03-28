@@ -137,7 +137,7 @@ describe("shillbot", () => {
   describe("initialize", () => {
     it("creates GlobalState with authority, fee, and threshold", async () => {
       await program.methods
-        .initialize(PROTOCOL_FEE_BPS, QUALITY_THRESHOLD)
+        .initialize(PROTOCOL_FEE_BPS, QUALITY_THRESHOLD, new BN(0))
         .accountsPartial({
           globalState: globalPda,
           authority: authority.publicKey,

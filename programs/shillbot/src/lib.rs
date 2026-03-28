@@ -31,8 +31,14 @@ pub mod shillbot {
         ctx: Context<Initialize>,
         protocol_fee_bps: u16,
         quality_threshold: u64,
+        starting_counter: u64,
     ) -> Result<()> {
-        instructions::initialize::initialize(ctx, protocol_fee_bps, quality_threshold)
+        instructions::initialize::initialize(ctx, protocol_fee_bps, quality_threshold, starting_counter)
+    }
+
+    /// One-time migration: close old GlobalState for re-init. Remove after devnet migration.
+    pub fn migrate_global(ctx: Context<MigrateGlobal>) -> Result<()> {
+        instructions::migrate_global::migrate_global(ctx)
     }
 
     pub fn update_params(

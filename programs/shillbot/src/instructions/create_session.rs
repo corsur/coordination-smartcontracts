@@ -5,10 +5,7 @@ use crate::state::SessionDelegate;
 
 /// Agent creates a session delegation for an MCP server session key.
 /// Only the agent (not the delegate) can create the delegation.
-pub fn create_session(
-    ctx: Context<CreateSession>,
-    allowed_instructions: u8,
-) -> Result<()> {
+pub fn create_session(ctx: Context<CreateSession>, allowed_instructions: u8) -> Result<()> {
     let clock = Clock::get()?;
 
     // Checks: allowed_instructions is a valid bitmask (only bits 0 and 1 used)

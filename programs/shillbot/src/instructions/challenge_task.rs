@@ -9,10 +9,7 @@ use crate::{FREE_CHALLENGE_PERCENT, MIN_CHALLENGE_BOND_MULTIPLIER};
 
 /// Anyone can challenge a verified task by posting a bond during the challenge window.
 /// Client exception: the task's client gets 20% free challenges on the campaign.
-pub fn challenge_task(
-    ctx: Context<ChallengeTask>,
-    total_campaign_tasks: u16,
-) -> Result<()> {
+pub fn challenge_task(ctx: Context<ChallengeTask>, total_campaign_tasks: u16) -> Result<()> {
     let clock = Clock::get()?;
     let task = &ctx.accounts.task;
     let challenger_key = ctx.accounts.challenger.key();

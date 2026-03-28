@@ -30,17 +30,12 @@ pub fn emergency_return(ctx: Context<EmergencyReturnAccounts>) -> Result<()> {
         .len()
         .checked_div(2)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
-    require!(
-        accounts.len() % 2 == 0,
-        ShillbotError::ArithmeticOverflow
-    );
+    require!(accounts.len() % 2 == 0, ShillbotError::ArithmeticOverflow);
 
     let mut i: usize = 0;
     // Bounded: pair_count <= 10 (20/2)
     while i < pair_count {
-        let idx = i
-            .checked_mul(2)
-            .ok_or(ShillbotError::ArithmeticOverflow)?;
+        let idx = i.checked_mul(2).ok_or(ShillbotError::ArithmeticOverflow)?;
         let task_info = &accounts[idx];
         let client_idx = idx
             .checked_add(1)
@@ -102,9 +97,7 @@ pub fn emergency_return(ctx: Context<EmergencyReturnAccounts>) -> Result<()> {
             drop(data);
         }
 
-        i = i
-            .checked_add(1)
-            .ok_or(ShillbotError::ArithmeticOverflow)?;
+        i = i.checked_add(1).ok_or(ShillbotError::ArithmeticOverflow)?;
     }
 
     emit!(EmergencyReturn { task_ids });

@@ -69,17 +69,11 @@ pub mod shillbot {
         instructions::finalize_task::finalize_task(ctx)
     }
 
-    pub fn challenge_task(
-        ctx: Context<ChallengeTask>,
-        total_campaign_tasks: u16,
-    ) -> Result<()> {
+    pub fn challenge_task(ctx: Context<ChallengeTask>, total_campaign_tasks: u16) -> Result<()> {
         instructions::challenge_task::challenge_task(ctx, total_campaign_tasks)
     }
 
-    pub fn resolve_challenge(
-        ctx: Context<ResolveChallenge>,
-        challenger_won: bool,
-    ) -> Result<()> {
+    pub fn resolve_challenge(ctx: Context<ResolveChallenge>, challenger_won: bool) -> Result<()> {
         instructions::resolve_challenge::resolve_challenge(ctx, challenger_won)
     }
 
@@ -91,10 +85,7 @@ pub mod shillbot {
         instructions::emergency_return::emergency_return(ctx)
     }
 
-    pub fn create_session(
-        ctx: Context<CreateSession>,
-        allowed_instructions: u8,
-    ) -> Result<()> {
+    pub fn create_session(ctx: Context<CreateSession>, allowed_instructions: u8) -> Result<()> {
         instructions::create_session::create_session(ctx, allowed_instructions)
     }
 

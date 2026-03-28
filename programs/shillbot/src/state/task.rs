@@ -84,7 +84,7 @@ impl Task {
         + 8   // verified_at
         + 8   // challenge_deadline
         + 2   // client_challenges
-        + 1;  // bump
+        + 1; // bump
 }
 
 #[cfg(test)]

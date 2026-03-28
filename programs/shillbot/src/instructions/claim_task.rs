@@ -15,7 +15,10 @@ pub fn claim_task(ctx: Context<ClaimTask>) -> Result<()> {
     let task = &ctx.accounts.task;
 
     // Checks: state
-    require!(task.state == TaskState::Open, ShillbotError::InvalidTaskState);
+    require!(
+        task.state == TaskState::Open,
+        ShillbotError::InvalidTaskState
+    );
 
     // Checks: minimum time buffer before deadline
     let earliest_claim_deadline = clock

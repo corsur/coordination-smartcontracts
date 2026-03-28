@@ -23,7 +23,10 @@ pub fn compute_payment(
     protocol_fee_bps: u16,
 ) -> Result<(u64, u64)> {
     // Precondition: score within bounds
-    require!(composite_score <= MAX_SCORE, ShillbotError::ScoreOutOfBounds);
+    require!(
+        composite_score <= MAX_SCORE,
+        ShillbotError::ScoreOutOfBounds
+    );
     // Precondition: threshold within bounds
     require!(
         quality_threshold <= MAX_SCORE,
@@ -55,8 +58,8 @@ pub fn compute_payment(
     let gross_payment_128 = numerator
         .checked_div(score_range as u128)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
-    let gross_payment = u64::try_from(gross_payment_128)
-        .map_err(|_| error!(ShillbotError::ArithmeticOverflow))?;
+    let gross_payment =
+        u64::try_from(gross_payment_128).map_err(|_| error!(ShillbotError::ArithmeticOverflow))?;
 
     // fee = gross_payment * protocol_fee_bps / 10_000 (u128 intermediate)
     let fee_numerator = (gross_payment as u128)
@@ -65,8 +68,7 @@ pub fn compute_payment(
     let fee_128 = fee_numerator
         .checked_div(10_000u128)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
-    let fee = u64::try_from(fee_128)
-        .map_err(|_| error!(ShillbotError::ArithmeticOverflow))?;
+    let fee = u64::try_from(fee_128).map_err(|_| error!(ShillbotError::ArithmeticOverflow))?;
 
     let payment = gross_payment
         .checked_sub(fee)
@@ -76,17 +78,17 @@ pub fn compute_payment(
     let total_out = payment
         .checked_add(fee)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
-    require!(total_out <= escrow_lamports, ShillbotError::PaymentExceedsEscrow);
+    require!(
+        total_out <= escrow_lamports,
+        ShillbotError::PaymentExceedsEscrow
+    );
 
     Ok((payment, fee))
 }
 
 /// Computes the minimum challenge bond: multiplier * escrow_lamports.
 /// Multiplier must be in [MIN_CHALLENGE_BOND_MULTIPLIER, MAX_CHALLENGE_BOND_MULTIPLIER].
-pub fn compute_challenge_bond(
-    escrow_lamports: u64,
-    multiplier: u8,
-) -> Result<u64> {
+pub fn compute_challenge_bond(escrow_lamports: u64, multiplier: u8) -> Result<u64> {
     // Precondition: multiplier within spec bounds
     require!(
         multiplier >= crate::MIN_CHALLENGE_BOND_MULTIPLIER,
@@ -192,9 +194,10 @@ mod tests {
     #[test]
     fn payment_large_escrow_no_overflow() {
         // u64::MAX as escrow; u128 intermediates prevent overflow
-        let (payment, fee) = compute_payment(500_000, 0, u64::MAX, 1000).unwrap();
+        let escrow = u64::MAX;
+        let (payment, fee) = compute_payment(500_000, 0, escrow, 1000).unwrap();
         let total = payment.checked_add(fee).unwrap();
-        assert!(total <= u64::MAX);
+        assert!(total <= escrow);
     }
 
     #[test]

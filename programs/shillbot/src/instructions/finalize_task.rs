@@ -93,11 +93,7 @@ pub fn finalize_task(ctx: Context<FinalizeTask>) -> Result<()> {
 
 /// Transfer lamports from a PDA by directly adjusting lamport balances.
 /// This is safe because the PDA is owned by this program.
-fn transfer_lamports_from_pda(
-    from: &AccountInfo,
-    to: &AccountInfo,
-    amount: u64,
-) -> Result<()> {
+fn transfer_lamports_from_pda(from: &AccountInfo, to: &AccountInfo, amount: u64) -> Result<()> {
     let from_lamports = from.lamports();
     let to_lamports = to.lamports();
 

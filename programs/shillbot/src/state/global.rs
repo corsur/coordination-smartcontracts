@@ -19,5 +19,5 @@ impl GlobalState {
         + 32  // authority
         + 2   // protocol_fee_bps
         + 8   // quality_threshold
-        + 1;  // bump
+        + 1; // bump
 }

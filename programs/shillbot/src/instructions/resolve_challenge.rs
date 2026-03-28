@@ -8,10 +8,7 @@ use crate::state::{Challenge, GlobalState, Task, TaskState};
 /// If challenger won: escrow returned to client, bond returned to challenger, agent gets $0.
 /// If agent won: payment to agent, bond slashed (portion to agent, portion to treasury),
 /// remainder escrow to client.
-pub fn resolve_challenge(
-    ctx: Context<ResolveChallenge>,
-    challenger_won: bool,
-) -> Result<()> {
+pub fn resolve_challenge(ctx: Context<ResolveChallenge>, challenger_won: bool) -> Result<()> {
     let task = &ctx.accounts.task;
     let challenge = &ctx.accounts.challenge;
     let global = &ctx.accounts.global_state;

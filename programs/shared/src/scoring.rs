@@ -1,8 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::constants::{
-    BPS_DENOMINATOR, MAX_PENALTY_WEIGHT_BPS, MAX_SCORE, MAX_WEIGHT_BPS,
-    METRIC_COUNT, MIN_WEIGHT_BPS,
+    BPS_DENOMINATOR, MAX_PENALTY_WEIGHT_BPS, MAX_SCORE, MAX_WEIGHT_BPS, METRIC_COUNT,
+    MIN_WEIGHT_BPS,
 };
 
 /// Composite score with per-metric breakdown and penalty.
@@ -143,10 +143,7 @@ mod tests {
     fn composite_score_metric_exceeds_max_rejected() {
         let mut score = valid_composite_score();
         score.metric_scores[0] = MAX_SCORE.checked_add(1).unwrap();
-        assert_eq!(
-            score.validate(),
-            Err("metric score exceeds MAX_SCORE")
-        );
+        assert_eq!(score.validate(), Err("metric score exceeds MAX_SCORE"));
     }
 
     #[test]
@@ -207,8 +204,7 @@ mod tests {
     fn composite_score_roundtrip_serialization() {
         let score = valid_composite_score();
         let bytes = borsh::to_vec(&score).expect("serialize");
-        let deserialized =
-            CompositeScore::try_from_slice(&bytes).expect("deserialize");
+        let deserialized = CompositeScore::try_from_slice(&bytes).expect("deserialize");
         assert_eq!(score, deserialized);
     }
 
@@ -248,10 +244,7 @@ mod tests {
             weights: [1667, 1667, 1667, 1667, 1666, 1665],
             penalty_weight: 1000,
         };
-        assert_eq!(
-            weights.validate(),
-            Err("weights do not sum to 10000")
-        );
+        assert_eq!(weights.validate(), Err("weights do not sum to 10000"));
     }
 
     #[test]
@@ -260,20 +253,14 @@ mod tests {
             weights: [1667, 1667, 1667, 1667, 1666, 1667],
             penalty_weight: 1000,
         };
-        assert_eq!(
-            weights.validate(),
-            Err("weights do not sum to 10000")
-        );
+        assert_eq!(weights.validate(), Err("weights do not sum to 10000"));
     }
 
     #[test]
     fn scoring_weights_penalty_exceeds_max_rejected() {
         let mut weights = valid_weights();
         weights.penalty_weight = MAX_PENALTY_WEIGHT_BPS.checked_add(1).unwrap();
-        assert_eq!(
-            weights.validate(),
-            Err("penalty_weight exceeds maximum")
-        );
+        assert_eq!(weights.validate(), Err("penalty_weight exceeds maximum"));
     }
 
     #[test]
@@ -297,10 +284,7 @@ mod tests {
             weights: [MIN_WEIGHT_BPS; METRIC_COUNT],
             penalty_weight: 0,
         };
-        assert_eq!(
-            weights.validate(),
-            Err("weights do not sum to 10000")
-        );
+        assert_eq!(weights.validate(), Err("weights do not sum to 10000"));
     }
 
     #[test]
@@ -313,10 +297,7 @@ mod tests {
         // First check: each weight is within bounds (passes)
         // Sum check: 30000 != 10000 — but wait, sum overflows u16!
         // 5000 * 6 = 30000 > u16::MAX (65535) — no overflow, 30000 fits in u16
-        assert_eq!(
-            weights.validate(),
-            Err("weights do not sum to 10000")
-        );
+        assert_eq!(weights.validate(), Err("weights do not sum to 10000"));
     }
 
     #[test]
@@ -334,8 +315,7 @@ mod tests {
     fn scoring_weights_roundtrip_serialization() {
         let weights = valid_weights();
         let bytes = borsh::to_vec(&weights).expect("serialize");
-        let deserialized =
-            ScoringWeights::try_from_slice(&bytes).expect("deserialize");
+        let deserialized = ScoringWeights::try_from_slice(&bytes).expect("deserialize");
         assert_eq!(weights, deserialized);
     }
 }

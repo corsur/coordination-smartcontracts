@@ -17,7 +17,10 @@ pub fn create_task(
     let clock = Clock::get()?;
 
     // Checks
-    require!(deadline > clock.unix_timestamp, ShillbotError::DeadlineExpired);
+    require!(
+        deadline > clock.unix_timestamp,
+        ShillbotError::DeadlineExpired
+    );
     require!(submit_margin >= 0, ShillbotError::ArithmeticOverflow);
     require!(claim_buffer >= 0, ShillbotError::ArithmeticOverflow);
     require!(escrow_lamports > 0, ShillbotError::ArithmeticOverflow);
@@ -37,7 +40,9 @@ pub fn create_task(
     // Use the first 16 bytes of slot hashes data (after the count prefix of 8 bytes)
     // as a source of pseudorandomness for the nonce.
     let start = 8usize;
-    let end = start.checked_add(16).ok_or(ShillbotError::ArithmeticOverflow)?;
+    let end = start
+        .checked_add(16)
+        .ok_or(ShillbotError::ArithmeticOverflow)?;
     if data.len() >= end {
         task_nonce.copy_from_slice(&data[start..end]);
     }

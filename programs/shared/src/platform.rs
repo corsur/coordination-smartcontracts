@@ -130,8 +130,7 @@ mod tests {
             PlatformType::TikTok,
         ] {
             let bytes = borsh::to_vec(&variant).expect("serialize");
-            let deserialized =
-                PlatformType::try_from_slice(&bytes).expect("deserialize");
+            let deserialized = PlatformType::try_from_slice(&bytes).expect("deserialize");
             assert_eq!(variant, deserialized);
         }
     }
@@ -156,10 +155,7 @@ mod tests {
     fn platform_proof_zero_content_hash_rejected() {
         let mut proof = valid_proof();
         proof.content_id_hash = [0u8; 32];
-        assert_eq!(
-            proof.validate(),
-            Err("content_id_hash must not be zero")
-        );
+        assert_eq!(proof.validate(), Err("content_id_hash must not be zero"));
     }
 
     #[test]
@@ -187,8 +183,7 @@ mod tests {
     fn platform_proof_roundtrip_serialization() {
         let proof = valid_proof();
         let bytes = borsh::to_vec(&proof).expect("serialize");
-        let deserialized =
-            PlatformProof::try_from_slice(&bytes).expect("deserialize");
+        let deserialized = PlatformProof::try_from_slice(&bytes).expect("deserialize");
         assert_eq!(proof, deserialized);
     }
 
@@ -222,10 +217,7 @@ mod tests {
             likes: 1,
             ..Default::default()
         };
-        assert_eq!(
-            metrics.validate(),
-            Err("non-zero metrics with zero views")
-        );
+        assert_eq!(metrics.validate(), Err("non-zero metrics with zero views"));
     }
 
     #[test]
@@ -235,10 +227,7 @@ mod tests {
             comments: 1,
             ..Default::default()
         };
-        assert_eq!(
-            metrics.validate(),
-            Err("non-zero metrics with zero views")
-        );
+        assert_eq!(metrics.validate(), Err("non-zero metrics with zero views"));
     }
 
     #[test]
@@ -248,10 +237,7 @@ mod tests {
             shares: 1,
             ..Default::default()
         };
-        assert_eq!(
-            metrics.validate(),
-            Err("non-zero metrics with zero views")
-        );
+        assert_eq!(metrics.validate(), Err("non-zero metrics with zero views"));
     }
 
     #[test]
@@ -316,8 +302,7 @@ mod tests {
     fn engagement_metrics_roundtrip_serialization() {
         let metrics = valid_metrics();
         let bytes = borsh::to_vec(&metrics).expect("serialize");
-        let deserialized =
-            EngagementMetrics::try_from_slice(&bytes).expect("deserialize");
+        let deserialized = EngagementMetrics::try_from_slice(&bytes).expect("deserialize");
         assert_eq!(metrics, deserialized);
     }
 }

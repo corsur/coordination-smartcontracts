@@ -22,7 +22,7 @@ impl Challenge {
         + 8   // created_at
         + 1   // resolved
         + 1   // challenger_won
-        + 1;  // bump
+        + 1; // bump
 }
 
 #[account]
@@ -43,5 +43,5 @@ impl SessionDelegate {
         + 32  // delegate
         + 1   // allowed_instructions
         + 8   // created_at
-        + 1;  // bump
+        + 1; // bump
 }

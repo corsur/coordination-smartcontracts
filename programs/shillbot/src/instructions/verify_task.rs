@@ -11,10 +11,7 @@ use crate::CHALLENGE_WINDOW_SECONDS;
 /// The authority account represents the Switchboard feed attestation signer.
 /// Immutable invariant: the feed PDA must be derived from fixed seeds and owned
 /// by the Switchboard program. For devnet, the authority in GlobalState signs directly.
-pub fn verify_task(
-    ctx: Context<VerifyTask>,
-    composite_score: u64,
-) -> Result<()> {
+pub fn verify_task(ctx: Context<VerifyTask>, composite_score: u64) -> Result<()> {
     let clock = Clock::get()?;
     let task = &ctx.accounts.task;
     let global = &ctx.accounts.global_state;

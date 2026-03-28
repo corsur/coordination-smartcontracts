@@ -1,0 +1,23 @@
+[package]
+name = "shared"
+version = "0.1.0"
+description = "Platform-agnostic types for the Coordination DAO"
+edition = "2021"
+
+[lib]
+crate-type = ["lib"]
+name = "shared"
+
+[features]
+default = []
+idl-build = []
+
+[dependencies]
+borsh = "0.10"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[lints.clippy]
+all = "deny"
+arithmetic_side_effects = "deny"

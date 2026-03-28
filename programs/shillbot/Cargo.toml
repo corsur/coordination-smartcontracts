@@ -1,0 +1,32 @@
+[package]
+name = "shillbot"
+version = "0.1.0"
+description = "Shillbot task marketplace — escrow, verification, and payment"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "shillbot"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "shared/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+anchor-lang = "0.32.1"
+shared = { path = "../shared" }
+solana-sha256-hasher = "2"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[lints.clippy]
+all = "deny"
+arithmetic_side_effects = "deny"

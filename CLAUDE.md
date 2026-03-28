@@ -1,16 +1,155 @@
 # Smart Contracts — Implementation Context
 
-Solana program built with Anchor. Read the root `CLAUDE.md` before this file for project context and code standards.
+Solana programs built with Anchor. Read the root `coordination/CLAUDE.md` before this file for project context, code standards, and DAO overview. Read `shillbot/CLAUDE.md` for the Shillbot protocol specification.
 
-### Code Standard Clarifications (Solana)
-
-**Rule 3 — unbounded resource consumption:** On-chain, collection sizes must be statically bounded. Never use `Vec::with_capacity(n)` where `n` comes from instruction input — every caller can force arbitrary allocation and exhaust compute budget.
-
-**Rule 11 — Checks-Effects-Interactions (CEI):** Instruction handlers must follow this order: (1) validate all preconditions; (2) apply all account state mutations; (3) perform lamport transfers and CPIs last. Never transfer lamports or call another program before all state changes are committed. A failed CPI after partial state mutation leaves accounts in an inconsistent state. In Anchor, this means `system_program::transfer` and `transfer_lamports` calls always come after every `account.field = value` assignment in the same handler.
+This workspace contains all on-chain programs for the Coordination DAO: the coordination game, the Shillbot task marketplace, and shared types.
 
 ---
 
-## File and Module Structure
+## Code Standards (Self-Contained for Solana Programs)
+
+These are the full code standards for this workspace, translated from the root `coordination/CLAUDE.md` into Anchor/Solana-specific rules. An agent working only in this directory gets everything it needs from this section.
+
+### Design Philosophy
+
+Write clean, minimal code. Complexity is a liability — every line of code is a line that can be wrong.
+
+- **No speculative abstraction.** Don't create a generic `GameEngine` trait because "we might have more game types." Build the coordination game. Build the shillbot task lifecycle. If a pattern emerges across both, extract it then. The `shared` crate has the platform-agnostic types (`PlatformProof`, `EngagementMetrics`) — those are justified because changing on-chain types requires a program upgrade. Everything else starts concrete.
+- **Delete, don't comment out.** No `// old payoff logic` or `// TODO: remove`. Git has the history. Commented-out instruction handlers are noise.
+- **Names over comments.** `fn verify_commitment_matches_preimage(commitment: &[u8; 32], preimage: &[u8; 32]) -> bool` needs no comment. `fn check(c: &[u8; 32], r: &[u8; 32]) -> bool` needs a rewrite.
+- **Flat over nested.** Use early returns with `require!()`: check all preconditions at the top of the handler, then the happy path is flat. If a handler has 3 levels of `if` nesting, break it up.
+- **No clever code.** A `match` on `TaskState` is better than casting to `u8` and doing arithmetic on state values. The next auditor shouldn't have to decode your intent.
+- **Refactor as you go.** When touching a file, fix naming, remove dead code, simplify structure. Leave every file cleaner than you found it.
+- **Don't write tests until you know what behavior you want.** The spec (this file) defines the behavior. Tests encode the spec. A test that doesn't trace back to a spec requirement is worthless.
+- **No worthless tests.** `assert!(create_task_works())` is not a test. A test that creates a task with specific parameters, then verifies the PDA state, escrow balance, and emitted event is a test.
+- **No error swallowing.** Every failure mode must be visible. Every `require!()` uses a named error variant. Every error variant is documented. No `ProgramError::Custom(0)`.
+- **Reject at system boundaries.** Every instruction handler validates ALL inputs before touching state. A game that accepts an invalid stake amount is worse than one that refuses a valid one.
+- **Diagrams are mandatory.** Both state machines (game and shillbot) have ASCII diagrams in this file. When modifying state transitions, update the diagram FIRST. If a new instruction adds a transition not in the diagram, the change is incomplete.
+- **Everything deferred is written down.** Open questions and deferred work live in the Open Questions section at the bottom of this file. Not as code comments.
+- **Classify by reversibility.** On-chain decisions are almost all one-way doors: account structures, PDA seed derivation, state machine transitions, payment formulas. These require maximum rigor. The only two-way doors: parameter values (quality threshold, protocol fee, scoring weights) which are governance-adjustable within bounds. Treat everything else as irreversible.
+
+### Rules — Anchor/Solana Specific
+
+**Rule 1 — No recursion.** Solana BPF has a 4KB call stack. Recursive functions are banned. All iteration must be explicit and bounded. If processing remaining accounts in `finalize_tournament`, iterate with a `for` loop and a counter, never recurse.
+
+**Rule 2 — Bounded loops.** Every loop iterating over instruction input must check its bound BEFORE entry:
+```rust
+require!(remaining_accounts.len() <= MAX_PLAYERS, TooManyAccounts);
+for account_info in ctx.remaining_accounts.iter() {
+    // safe: bounded by the check above
+}
+```
+Never trust `remaining_accounts.len()` — an attacker chooses how many accounts to pass.
+
+**Rule 3 — No unbounded resource consumption.** On-chain, collection sizes must be statically bounded. Never use `Vec::with_capacity(n)` where `n` comes from instruction input. Every PDA account has a fixed, known size. If a collection grows with usage (e.g., challenge history), use separate PDA accounts per entry, not a growing Vec in one account.
+
+**Rule 4 — Instruction handlers ≤60 lines.** Handlers validate, delegate to a pure function, and emit an event:
+```rust
+pub fn reveal_guess(ctx: Context<RevealGuess>, r: [u8; 32]) -> Result<()> {
+    let game = &mut ctx.accounts.game;
+    // Checks (10 lines)
+    require!(game.state == GameState::Revealing, InvalidGameState);
+    require!(!already_revealed(game, player), AlreadyRevealed);
+    verify_commitment(game, player, &r)?;
+    // Effects (5 lines)
+    let guess = r[31] & 1;
+    set_guess(game, player, guess);
+    // Interactions (5 lines) — if both revealed, resolve
+    if both_revealed(game) {
+        resolve_game(game, &ctx.accounts.tournament, ...)?;
+    }
+    emit!(GuessRevealed { game_id: game.game_id, player: player.key() });
+    Ok(())
+}
+```
+`resolve_game` is a pure function that computes payoffs. The handler orchestrates but doesn't compute.
+
+**Rule 5 — Assert invariants (minimum 2 per function).** For every instruction handler:
+```rust
+// Precondition: game is in the correct state
+require!(game.state == GameState::Verified, InvalidTaskState);
+// Precondition: challenge window has passed
+require!(clock.unix_timestamp > task.challenge_deadline, ChallengeWindowOpen);
+// ... do the work ...
+// Postcondition: lamport conservation
+let total_out = payment + fee + remainder;
+require!(total_out == task.escrow_lamports, PaymentExceedsEscrow);
+```
+Pure functions called by handlers also assert: preconditions on entry, postconditions on exit.
+
+**Rule 6 — Smallest data scope.** In Anchor, only request the accounts and permissions an instruction actually needs. If `finalize_task` doesn't need the client's wallet as a signer, don't include it in the Accounts struct. Excess authority is excess attack surface. Don't make accounts `mut` if the instruction only reads them.
+
+**Rule 7 — No .unwrap() or .expect().** Every fallible call uses `?` or an explicit match. A panic in a Solana program aborts the transaction and can leave state inconsistent (if a CPI succeeded before the panic). Use `ok_or(ErrorCode::ArithmeticOverflow)?` for Option types. Use `checked_add`, `checked_mul`, `checked_div`, `checked_sub` — never raw operators on values that could overflow.
+
+**Rule 8 — No unsafe.** Zero `unsafe` in smart contract code. If you think you need it, you're solving the wrong problem. Anchor and the Solana SDK provide safe abstractions for everything.
+
+**Rule 9 — Warnings as errors.** Every program crate:
+```rust
+#![deny(warnings)]
+#![deny(clippy::all)]
+#![deny(clippy::arithmetic_side_effects)]
+```
+`clippy::arithmetic_side_effects` means the compiler rejects `+`, `-`, `*`, `/` on integers — you MUST use `checked_*` variants. This is non-negotiable for code handling lamports, scores, and fees.
+
+**Rule 10 — Release mode for production.** BPF builds are always release mode. Debug overflow checks don't exist in production. Every arithmetic safety check must be explicit (`checked_*`), never reliant on debug assertions. This is the #1 source of Solana exploits — developers test with debug overflow detection, deploy to mainnet where it's gone, and get drained.
+
+**Rule 11 — CEI (Checks-Effects-Interactions).** Instruction handlers follow this order exactly:
+1. **Checks** — all `require!()` validations. State checks, signer checks, bounds checks, timeout checks.
+2. **Effects** — all `account.field = value` mutations. State transitions, score recording, timestamp updates.
+3. **Interactions** — all lamport transfers and CPIs. `system_program::transfer`, `token::transfer`, emit events.
+Never transfer lamports before state is committed. Never CPI before all account mutations are done. In Anchor, this means every `ctx.accounts.game.state = GameState::Resolved` comes BEFORE every `transfer_lamports(...)`.
+
+### Solana Security Rules
+
+- **Account ownership** — always verify an account is owned by the expected program before reading its data. Anchor typed accounts enforce this automatically. Never bypass with raw `AccountInfo` unless ownership is manually verified with `require!(account.owner == &expected_program_id)`.
+- **Signer checks** — never assume an account signed. Always verify via Anchor's `Signer` type or explicit `require!(account.is_signer)`.
+- **PDA derivation** — always re-derive and verify PDA seeds on-chain. Never trust a PDA address passed in by a caller. Use Anchor's `seeds` and `bump` constraints.
+- **State before CPI** — finalize ALL account state mutations before ANY cross-program invocation. A CPI to an untrusted program after partial state updates is a reentrancy risk.
+
+### Fixed-Point Arithmetic
+
+All scoring and payment calculations use integer arithmetic with an explicit scaling factor (basis points with 10,000 denominator, or 1e6 for composite scores). Document the precision guarantees. Use u128 for intermediate products to prevent overflow on large metric values. Assert `payment_amount + fee <= escrow_lamports` before any transfer.
+
+### `init` vs `init_if_needed`
+
+Use `init` exclusively for the shillbot program (prevents PDA account resurrection attacks). The coordination game uses `init_if_needed` for PlayerProfile accounts only (player pays for creation, idempotent). Never use `init_if_needed` for accounts holding escrow funds.
+
+### Crate-Level Requirements
+
+Every program crate in this workspace must include:
+```rust
+#![deny(warnings)]
+#![deny(clippy::all)]
+#![deny(clippy::arithmetic_side_effects)]  // mandatory for all financial arithmetic
+```
+BPF builds are release mode — debug overflow checks do not apply in production. All arithmetic safety must be explicit (`checked_add`, `checked_mul`, etc.), never reliant on debug assertions. This is Rule 10 from the root CLAUDE.md and is the #1 source of Solana exploits.
+
+### Observability (On-Chain Adaptation)
+
+On-chain programs cannot log to Cloud Logging. The observability layer is:
+- **Events** — emit an Anchor event for every state transition, every payment, every slash, every challenge. These are the on-chain equivalent of structured logs. Off-chain indexers consume them for monitoring, alerting, and dashboards.
+- **`msg!()`** — use for debugging during development. Strip or minimize in production builds (consumes compute units).
+- **Named error variants** — every `require!` / error return uses a specific error from the program's error enum. Generic errors (`ProgramError::Custom(0)`) are banned. The error name IS the structured log entry.
+
+### Deployment
+
+`anchor deploy` from a local machine is forbidden on mainnet. All mainnet deployments go through CI with the upgrade authority check (assert Squads multisig, fail if EOA). Devnet deployments from local machines are acceptable during development.
+
+### Root Philosophy — Solana Adaptations
+
+These apply the root CLAUDE.md philosophy items to the smart contract context:
+
+**"Every failure mode must be visible"** — On-chain, this means: every `require!` / error return must use a specific named error variant (not a generic error). Every error variant must be documented with what triggers it. On-chain programs cannot log to Cloud Logging, so **events are the observability layer** — emit events for every state transition, every payment, every slash. Off-chain indexers consume these events for monitoring and alerting.
+
+**"Diagrams are mandatory for non-trivial flows"** — Both state machines in this workspace (game and shillbot) have ASCII diagrams in this file. When modifying state transitions, update the diagram first, then the code. If a new instruction adds a state transition not in the diagram, the PR is incomplete. Code comments in `state/*.rs` files should include inline ASCII diagrams for any non-obvious account relationship or data flow.
+
+**"Everything deferred must be written down"** — Deferred work for smart contracts is tracked in the Open Questions section at the bottom of this file. If an instruction handler has a known limitation or a future enhancement is planned, add it there — not as a code comment that gets forgotten.
+
+**"Classify decisions by reversibility"** — Smart contract decisions are almost all one-way doors: account structures, PDA seed derivation, state machine transitions, and payment formulas are extremely hard to change post-deployment (requires program upgrade with timelock). These deserve maximum rigor. The only two-way doors in this workspace are: parameter values (quality threshold, protocol fee, scoring weights) which are governance-adjustable within bounds, and off-chain oracle configuration. Treat everything else as irreversible.
+
+---
+
+## Workspace Structure
 
 ```
 smartcontracts/
@@ -18,53 +157,460 @@ smartcontracts/
 ├── Makefile                            # make build / test / clean
 ├── Cargo.toml                          # workspace root
 ├── programs/
-│   └── coordination/
+│   ├── coordination/                   # The Coordination Game (existing)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── state/
+│   │       │   ├── game.rs             # Game account, GameState enum
+│   │       │   ├── player.rs           # PlayerProfile account
+│   │       │   ├── tournament.rs       # Tournament account
+│   │       │   └── escrow.rs
+│   │       ├── instructions/
+│   │       │   ├── initialize.rs       # one-time global setup (GameCounter)
+│   │       │   ├── create_tournament.rs
+│   │       │   ├── create_game.rs
+│   │       │   ├── join_game.rs
+│   │       │   ├── commit_guess.rs
+│   │       │   ├── reveal_guess.rs
+│   │       │   ├── resolve_timeout.rs
+│   │       │   ├── close_game.rs
+│   │       │   ├── finalize_tournament.rs
+│   │       │   └── claim_reward.rs
+│   │       ├── errors.rs
+│   │       ├── events.rs
+│   │       └── payoff.rs
+│   │
+│   ├── shillbot/                       # Shillbot Task Marketplace (NEW)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── state/
+│   │       │   ├── task.rs             # Task account, TaskState enum
+│   │       │   ├── global.rs           # GlobalState (monotonic task counter)
+│   │       │   └── challenge.rs        # Challenge account
+│   │       ├── instructions/
+│   │       │   ├── initialize.rs       # one-time setup (GlobalState)
+│   │       │   ├── create_task.rs      # client creates task, funds escrow
+│   │       │   ├── claim_task.rs       # agent claims, deadline locked
+│   │       │   ├── submit_work.rs      # agent submits video ID proof
+│   │       │   ├── verify_task.rs      # oracle attestation records score
+│   │       │   ├── finalize_task.rs    # challenge window passes, payment releases
+│   │       │   ├── challenge_task.rs   # anyone posts bond to dispute
+│   │       │   ├── resolve_challenge.rs # multisig resolves dispute
+│   │       │   ├── expire_task.rs      # permissionless crank, returns escrow
+│   │       │   ├── emergency_return.rs # multisig returns Open/Claimed escrow
+│   │       │   └── revoke_session.rs   # agent revokes MCP session delegation
+│   │       ├── scoring.rs              # composite score computation (fixed-point)
+│   │       ├── errors.rs
+│   │       └── events.rs
+│   │
+│   └── shared/                         # Shared types library crate (NOT a program)
 │       ├── Cargo.toml
 │       └── src/
-│           ├── lib.rs                  # program entrypoint, declare_id!, module re-exports
-│           ├── state/
-│           │   ├── mod.rs
-│           │   ├── game.rs             # Game account, GameState enum
-│           │   ├── player.rs           # PlayerProfile account
-│           │   └── tournament.rs       # Tournament account
-│           ├── instructions/
-│           │   ├── mod.rs
-│           │   ├── initialize.rs       # one-time global setup (GameCounter)
-│           │   ├── create_tournament.rs
-│           │   ├── create_game.rs      # player 1 creates and stakes
-│           │   ├── join_game.rs        # player 2 joins and stakes
-│           │   ├── commit_guess.rs
-│           │   ├── reveal_guess.rs
-│           │   ├── resolve_timeout.rs
-│           │   ├── close_game.rs       # permissionless rent reclaim on resolved game
-│           │   ├── finalize_tournament.rs
-│           │   └── claim_reward.rs
-│           ├── errors.rs
-│           └── events.rs
-└── tests/
-    └── coordination.ts                 # end-to-end tests
+│           ├── lib.rs
+│           ├── platform.rs             # PlatformProof, EngagementMetrics traits
+│           ├── scoring.rs              # CompositeScore, ScoringWeights types
+│           └── constants.rs            # shared constants (max weights, fee bounds, etc.)
+│
+├── tests/
+│   ├── coordination.ts                 # coordination game end-to-end tests
+│   └── shillbot.ts                     # shillbot end-to-end tests
+│
+└── sdk/                                # TypeScript SDK (published to GitHub Packages)
 ```
 
 Instruction handlers must be thin — validate, delegate to a pure function, emit event. Business logic lives in pure functions, not handlers. Each instruction is its own file.
 
 ---
 
-## Dependencies
+## Program: coordination (Existing Game)
+
+See the detailed specification below. This program is unchanged from the current implementation.
+
+### Dependencies
 
 ```toml
 [dependencies]
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 solana-sha256-hasher = "2"      # sol_sha256 syscall binding for commit verification
+shared = { path = "../shared" }  # shared types
 ```
 
-For hashing: use Solana's native `sol_sha256` syscall via `solana-sha256-hasher` rather than the `sha2` crate — lower compute unit cost.
+### DAO Treasury Integration
+
+The coordination game's tournament prize pool flows to the Coordination DAO treasury (Squads-controlled account). The `finalize_tournament` and `claim_reward` instructions interact with the Squads treasury PDA rather than a standalone tournament balance.
+
+Losing stake from games accumulates in the Tournament PDA during the tournament, then the Squads multisig governs distribution post-finalization.
 
 ---
 
-## Account Structures
+## Program: shillbot (NEW — Task Marketplace)
 
-### `GameCounter`
+### Overview
 
+Manages the full task lifecycle for the Shillbot protocol: task creation with escrow, agent claiming, proof submission, oracle-verified scoring, optimistic finalization with challenge window, and performance-scaled payment release.
+
+### Dependencies
+
+```toml
+[dependencies]
+anchor-lang = "0.32.1"
+switchboard-on-demand = "..."   # Switchboard oracle integration
+shared = { path = "../shared" } # shared platform-agnostic types
+```
+
+Note: does NOT use `init-if-needed`. All accounts use `init` exclusively.
+
+### Account Structures
+
+#### `GlobalState`
+
+Singleton PDA. Seeds: `["shillbot_global"]`
+
+```
+discriminator:        8 bytes
+task_counter:         u64       monotonic counter, incremented on each create_task
+authority:            Pubkey    Squads multisig (mainnet) or EOA (devnet)
+protocol_fee_bps:     u16       protocol fee in basis points (100 = 1%)
+quality_threshold:    u64       minimum composite score for payment (fixed-point)
+bump:                 u8
+```
+
+#### `Task`
+
+PDA seeds: `["task", task_counter: u64 as 8-byte LE, client: Pubkey]`
+
+```
+task_id:              u64
+client:               Pubkey
+agent:                Pubkey      zero-key until claimed
+state:                u8          TaskState enum
+escrow_lamports:      u64         client's escrowed payment
+content_hash:         [u8; 32]    SHA-256 of the off-chain campaign brief
+video_id_hash:        [u8; 32]    SHA-256 of submitted YouTube video ID (zeroed until submitted)
+task_nonce:           [u8; 16]    random nonce agent must include in video description
+composite_score:      u64         fixed-point score from oracle attestation (0 until verified)
+payment_amount:       u64         computed payment (0 until finalized)
+deadline:             i64         Unix timestamp
+submit_margin:        i64         seconds before deadline that submission must occur
+claim_buffer:         i64         minimum seconds remaining to claim
+created_at:           i64
+submitted_at:         i64         0 until submitted
+verified_at:          i64         0 until oracle attestation
+challenge_deadline:   i64         0 until challenge window starts
+client_challenges:    u16         count of free challenges used by client on this campaign
+bump:                 u8
+```
+
+#### `Challenge`
+
+PDA seeds: `["challenge", task_id: u64 as 8-byte LE, challenger: Pubkey]`
+
+```
+task_id:              u64
+challenger:           Pubkey
+bond_lamports:        u64
+is_client_challenge:  bool        true if challenger == task.client (free if within 20% cap)
+created_at:           i64
+resolved:             bool
+challenger_won:       bool
+bump:                 u8
+```
+
+#### `SessionDelegate`
+
+PDA seeds: `["session", agent: Pubkey, delegate: Pubkey]`
+
+```
+agent:                Pubkey      the agent who delegated
+delegate:             Pubkey      the session key (MCP server holds this)
+allowed_instructions: u8          bitmask: 0x01 = claim_task, 0x02 = submit_work
+created_at:           i64
+bump:                 u8
+```
+
+### State Machine
+
+```
+         ──(create_task)──► Open
+Open ──(claim_task)──► Claimed
+Open ──(expire_task: past deadline)──► [escrow returned, account closed]
+Open ──(emergency_return)──► [escrow returned, account closed]
+Claimed ──(submit_work)──► Submitted
+Claimed ──(expire_task: past deadline)──► [escrow returned, account closed]
+Claimed ──(emergency_return)──► [escrow returned, account closed]
+Submitted ──(verify_task: oracle attestation)──► Verified
+Submitted ──(expire_task: T+14d verification timeout)──► [escrow returned, account closed]
+Verified ──(finalize_task: challenge window passes)──► Finalized → [payment released, account closed]
+Verified ──(challenge_task)──► Disputed
+Disputed ──(resolve_challenge)──► Resolved → [payments adjusted, account closed]
+```
+
+Every instruction asserts valid source state(s) as a precondition. Invalid state transitions return `InvalidTaskState`.
+
+### Instructions
+
+#### `initialize`
+Signers: `authority`
+- Creates the `GlobalState` singleton PDA
+- Sets initial `protocol_fee_bps`, `quality_threshold`
+- On devnet: authority is an EOA. On mainnet: authority is the Squads multisig.
+
+#### `create_task`
+Signers: `client`
+- Increment `GlobalState.task_counter` (atomically with PDA init)
+- Init Task PDA with `init` (NOT `init_if_needed`)
+- Generate random `task_nonce` (16 bytes from recent slothash)
+- Transfer `escrow_lamports` from client to Task PDA
+- Store `content_hash` of the off-chain brief
+- Set `state = Open`, `deadline`, `submit_margin`, `claim_buffer`
+- Emit `TaskCreated { task_id, client, escrow_lamports, deadline, task_nonce }`
+
+#### `claim_task`
+Signers: `agent` (or authorized `SessionDelegate` with claim permission)
+- Assert `state == Open`
+- Assert `Clock::now() + claim_buffer < deadline` (minimum time buffer)
+- Assert agent has fewer than 5 claimed-but-not-submitted tasks (concurrent claim limit)
+- Set `agent`, `state = Claimed`
+- Emit `TaskClaimed { task_id, agent }`
+
+Concurrent claim check: iterate agent's recent tasks (passed as remaining accounts) and count those in Claimed state.
+
+#### `submit_work`
+Signers: `agent` (or authorized `SessionDelegate` with submit permission)
+- Assert `state == Claimed`
+- Assert `agent == task.agent`
+- Assert `Clock::now() + submit_margin < deadline` (submission before deadline minus margin)
+- Store `video_id_hash = SHA-256(video_id)`
+- Set `submitted_at = Clock::now()`, `state = Submitted`
+- Emit `WorkSubmitted { task_id, agent, video_id_hash }`
+
+#### `verify_task`
+Authority: Switchboard feed attestation (verified via Switchboard account ownership + feed PDA derivation from fixed seeds)
+- Assert `state == Submitted`
+- Assert attestation account is owned by Switchboard program
+- Assert attestation feed PDA matches the expected feed derived from well-known fixed seeds (immutable — feed rotation requires program upgrade)
+- Assert staleness: attestation timestamp is within acceptable window of `submitted_at + 7 days`
+- Read composite score from attestation data
+- Assert composite score is within valid bounds (0 to MAX_SCORE)
+- **Circuit breaker:** if score is 0 or attestation data is missing, do NOT finalize — set a flag for manual review
+- Store `composite_score`, set `verified_at`, compute `challenge_deadline = Clock::now() + CHALLENGE_WINDOW`
+- Set `state = Verified`
+- Compute `payment_amount`: if `composite_score >= quality_threshold`, scale linearly from threshold to max. If below threshold, `payment_amount = 0`.
+- Emit `TaskVerified { task_id, composite_score, payment_amount }`
+
+Payment computation (fixed-point):
+```
+if composite_score < quality_threshold:
+    payment_amount = 0
+else:
+    // Linear scaling from threshold to max
+    score_range = MAX_SCORE - quality_threshold
+    score_above_threshold = composite_score - quality_threshold
+    payment_amount = escrow_lamports * score_above_threshold / score_range
+    // Deduct protocol fee
+    fee = payment_amount * protocol_fee_bps / 10_000
+    payment_amount = payment_amount - fee
+```
+All arithmetic uses `checked_*` operations. Intermediate products use u128. Assert `payment_amount + fee <= escrow_lamports`.
+
+#### `finalize_task`
+Permissionless crank — anyone can call after challenge deadline.
+- Assert `state == Verified`
+- Assert `Clock::now() > challenge_deadline`
+- If `payment_amount > 0`: transfer `payment_amount` to agent, transfer `fee` to treasury, return remainder to client
+- If `payment_amount == 0`: return full `escrow_lamports` to client
+- Close Task account, return rent to client
+- Set `state = Finalized` (momentary, account closes immediately)
+- Emit `TaskFinalized { task_id, agent, payment_amount, fee_amount }`
+
+#### `challenge_task`
+Signers: `challenger`
+- Assert `state == Verified`
+- Assert `Clock::now() < challenge_deadline`
+- Compute required bond: `2-5x escrow_lamports` (full task price, not computed payout)
+- **Client exception:** if `challenger == task.client`, check campaign-level free challenge count. If below 20% of total campaign tasks, bond = 0. Otherwise, standard bond.
+- Init Challenge PDA
+- Transfer bond from challenger to Challenge PDA (if bond > 0)
+- Set `state = Disputed`
+- Emit `TaskChallenged { task_id, challenger, bond_lamports, is_client_challenge }`
+
+#### `resolve_challenge`
+Signers: `authority` (Squads multisig)
+- Assert `state == Disputed`
+- Input: `challenger_won: bool`
+- If challenger won: return escrow to client, return bond to challenger, agent gets $0
+- If agent won: release `payment_amount` to agent, slash challenger's bond (portion to agent, portion to treasury), return remainder escrow to client
+- Close Task and Challenge accounts
+- Emit `ChallengeResolved { task_id, challenger_won, bond_slashed }`
+
+#### `expire_task`
+Permissionless crank — anyone can call.
+- Assert `state == Open || state == Claimed` AND `Clock::now() > deadline`
+- OR assert `state == Submitted` AND `Clock::now() > submitted_at + VERIFICATION_TIMEOUT` (T+14d)
+- Return `escrow_lamports` to client
+- Close Task account, return rent to client
+- Emit `TaskExpired { task_id, state_at_expiry }`
+
+#### `emergency_return`
+Signers: `authority` (Squads multisig only)
+- Accepts a list of Task accounts as remaining accounts
+- For each: assert `state == Open || state == Claimed`
+- Return `escrow_lamports` to each task's client
+- Close each Task account
+- Emit `EmergencyReturn { task_ids: Vec<u64> }`
+
+Used when the platform becomes unavailable (e.g., YouTube API crackdown). Does NOT affect Submitted/Verified/Finalized tasks — those are handled by the verification timeout (T+14d).
+
+#### `revoke_session`
+Signers: `agent` (the delegating agent, NOT the session key)
+- Close the `SessionDelegate` PDA for the given delegate pubkey
+- Returns rent to agent
+- Emit `SessionRevoked { agent, delegate }`
+
+Allows agents to instantly revoke MCP server session delegation if the server is compromised.
+
+### Constants
+
+```rust
+pub const CHALLENGE_WINDOW_SECONDS: i64 = 86_400;    // 24 hours
+pub const VERIFICATION_TIMEOUT_SECONDS: i64 = 1_209_600; // 14 days
+pub const MAX_CONCURRENT_CLAIMS: u8 = 5;
+pub const MAX_SCORE: u64 = 1_000_000;                 // fixed-point 1e6
+pub const MIN_CLAIM_BUFFER_SECONDS: i64 = 14_400;     // 4 hours
+pub const FREE_CHALLENGE_PERCENT: u16 = 20;            // 20% of campaign tasks
+pub const MIN_CHALLENGE_BOND_MULTIPLIER: u8 = 2;       // 2x full task price
+pub const MAX_CHALLENGE_BOND_MULTIPLIER: u8 = 5;       // 5x full task price
+```
+
+### Error Types
+
+```rust
+InvalidTaskState              // instruction not valid for current state
+NotTaskClient                 // caller is not the task's client
+NotTaskAgent                  // caller is not the task's agent
+NotAuthority                  // caller is not the GlobalState authority
+DeadlineExpired               // claim/submit attempted after deadline
+ClaimBufferInsufficient       // not enough time remaining to claim
+SubmitMarginInsufficient      // submission too close to deadline
+MaxConcurrentClaimsExceeded   // agent has 5+ active claims
+InvalidAttestation            // Switchboard account ownership or feed PDA mismatch
+AttestationStale              // oracle data outside acceptable window
+ScoreOutOfBounds              // composite score exceeds MAX_SCORE
+ChallengeWindowClosed         // challenge attempted after window expired
+ChallengeWindowOpen           // finalize attempted before window closes
+InsufficientBond              // challenge bond below minimum
+FreeChallengesExhausted       // client used all 20% free challenges
+VerificationTimeoutNotReached // expire called on Submitted task before T+14d
+InvalidSessionDelegate        // session key not authorized for this instruction
+ArithmeticOverflow            // checked arithmetic failure
+PaymentExceedsEscrow          // payment + fee > escrow (invariant violation)
+```
+
+### Events
+
+```rust
+TaskCreated       { task_id: u64, client: Pubkey, escrow_lamports: u64, deadline: i64, task_nonce: [u8; 16] }
+TaskClaimed       { task_id: u64, agent: Pubkey }
+WorkSubmitted     { task_id: u64, agent: Pubkey, video_id_hash: [u8; 32] }
+TaskVerified      { task_id: u64, composite_score: u64, payment_amount: u64 }
+TaskFinalized     { task_id: u64, agent: Pubkey, payment_amount: u64, fee_amount: u64 }
+TaskChallenged    { task_id: u64, challenger: Pubkey, bond_lamports: u64, is_client_challenge: bool }
+ChallengeResolved { task_id: u64, challenger_won: bool, bond_slashed: u64 }
+TaskExpired       { task_id: u64, state_at_expiry: u8 }
+EmergencyReturn   { task_ids: Vec<u64> }
+SessionRevoked    { agent: Pubkey, delegate: Pubkey }
+```
+
+### Immutable Invariants (hardcoded, no key can change)
+
+These are enforced at the program level and cannot be modified by governance, multisig, or upgrade:
+
+1. Escrow release requires a valid Switchboard oracle attestation
+2. Attestation accounts must be owned by the Switchboard program and derived from the correct feed PDA (feed address derived from fixed seeds, not mutable config)
+3. Video description must contain the task nonce for verification to pass (verified off-chain by the oracle function, hash of nonce included in attestation)
+4. Payment requires composite score >= quality threshold
+5. Challenge window must exist (CHALLENGE_WINDOW_SECONDS > 0)
+6. Verification timeout at T+14d returns escrow if no attestation received
+7. Strict state machine enforcement — every instruction asserts valid source states
+8. CEI ordering — all state mutations before any CPI
+9. `payment_amount + fee <= escrow_lamports` asserted before every transfer
+
+### Parameter Governance
+
+The Squads multisig (v1) or Realms DAO (future) can modify these parameters via `update_params` instruction:
+
+- `protocol_fee_bps` — within bounds [100, 2500] (1-25%)
+- `quality_threshold` — within bounds [MIN_THRESHOLD, MAX_THRESHOLD] (set by multisig)
+- `scoring_weights` — within bounds [500, 5000] per weight in basis points (0.05-0.50), must sum to 10000
+
+The bounds themselves are controlled by the Squads multisig (not governance) to prevent governance attacks from widening parameter ranges.
+
+### Upgrade Authority
+
+- **Devnet:** EOA (fast iteration)
+- **Mainnet:** Squads multisig with minimum 48-hour timelock. Automated monitoring alerts on any upgrade buffer initialization.
+- **CI check:** Deployment scripts assert upgrade authority matches expected Squads address on mainnet. Fail hard if EOA.
+- **Long-term:** Consider making the program immutable after a stability period (6+ months of no critical upgrades).
+
+---
+
+## Crate: shared (Library, NOT a Program)
+
+Platform-agnostic types used by both on-chain programs and off-chain services.
+
+### Types
+
+```rust
+/// Platform-agnostic proof of content existence
+pub struct PlatformProof {
+    pub platform: PlatformType,
+    pub content_id_hash: [u8; 32],
+    pub nonce: [u8; 16],
+    pub timestamp: i64,
+}
+
+pub enum PlatformType {
+    YouTube = 0,
+    Farcaster = 1,   // future
+    TikTok = 2,      // future
+}
+
+/// Platform-agnostic engagement metrics
+pub struct EngagementMetrics {
+    pub views: u64,
+    pub likes: u64,
+    pub comments: u64,
+    pub shares: u64,
+    pub engagement_rate_bps: u64,  // engagements/views in basis points
+}
+
+/// Composite score with breakdown
+pub struct CompositeScore {
+    pub total: u64,                // fixed-point, max = MAX_SCORE
+    pub metric_scores: [u64; 6],   // per-metric weighted scores
+    pub penalty: u64,              // bot engagement penalty applied
+}
+
+/// Scoring weight configuration
+pub struct ScoringWeights {
+    pub weights: [u16; 6],         // basis points per metric, must sum to 10000
+    pub penalty_weight: u16,       // bot penalty weight in basis points
+}
+```
+
+These types are used by the shillbot on-chain program for attestation validation and by the off-chain scorer/verifier services for computation.
+
+---
+
+## Program: coordination (Detailed Specification)
+
+The full coordination game specification follows. This is the existing program, documented here for completeness.
+
+### Account Structures
+
+#### `GameCounter`
 Singleton PDA. Seeds: `["game_counter"]`
 
 ```
@@ -73,8 +619,7 @@ count:            u64      incremented on each create_game; used as game_id
 bump:             u8
 ```
 
-### `Tournament`
-
+#### `Tournament`
 PDA seeds: `["tournament", tournament_id: u64 as 8-byte LE]`
 
 ```
@@ -92,8 +637,7 @@ bump:                     u8
 
 The Tournament PDA is both data store and lamport vault for the prize pool.
 
-### `PlayerProfile`
-
+#### `PlayerProfile`
 PDA seeds: `["player", tournament_id: u64 as 8-byte LE, wallet: Pubkey]`
 
 One profile per (wallet, tournament). Created at `create_game` or `join_game` via `init_if_needed`; player pays for creation.
@@ -108,8 +652,7 @@ claimed:          bool     set to true after claim_reward; prevents double-claim
 bump:             u8
 ```
 
-### `Game`
-
+#### `Game`
 PDA seeds: `["game", game_id: u64 as 8-byte LE]`
 
 ```
@@ -126,251 +669,116 @@ p2_guess:                 u8        0 = same team, 1 = different team, 255 = unr
 first_committer:          u8        0 = neither, 1 = p1, 2 = p2
 p1_commit_slot:           u64       Solana slot at commit time
 p2_commit_slot:           u64       Solana slot at commit time
-commit_timeout_slots:     u64       set at creation (see Timeouts)
+commit_timeout_slots:     u64       set at creation
 created_at:               i64       Unix timestamp
 resolved_at:              i64       0 until resolved
-matchup_type:             u8        0 = same team (homogenous), 1 = different teams (heterogeneous); randomly assigned by matchmaker
+matchup_type:             u8        0 = same team, 1 = different teams
 bump:                     u8
 ```
 
-The Game PDA holds both players' staked lamports in its own balance. No separate vault account.
+The Game PDA holds both players' staked lamports in its own balance.
 
----
-
-## State Machine
+### State Machine
 
 ```
          ──(create_game)──► Pending
 Pending ──(join_game)──► Active
-Active ──(commit_guess: first player)──► Committing
-Committing ──(commit_guess: second player)──► Revealing
+Active ──(commit_guess: first)──► Committing
+Committing ──(commit_guess: second)──► Revealing
 Committing ──(resolve_timeout)──► Resolved
 Revealing ──(reveal_guess: both revealed)──► Resolved
 Revealing ──(resolve_timeout)──► Resolved
 Resolved ──(close_game)──► [account closed]
 ```
 
-Any instruction that receives a game in an invalid state for that instruction returns `InvalidGameState`. All transitions not listed above are rejected with `InvalidStateTransition`.
+### Instructions
 
----
+#### `initialize`
+Creates the global `GameCounter` PDA. One-time setup.
 
-## Instructions
+#### `create_tournament`
+Signers: any wallet. Validate `end_time > start_time` and `end_time > Clock::now()`. Initialize Tournament PDA.
 
-### `initialize`
-Signers: `authority` (any wallet)
-- One-time program setup; creates the global `GameCounter` PDA
-- Must be called once before any games can be created
-- No event emitted
+#### `create_game`
+Signers: player (becomes player one). Assert within tournament window. Assign game_id from counter. Init Game PDA. Transfer stake from player to Game PDA.
 
-### `create_tournament`
-Signers: `authority` (any wallet)
-- Validate `end_time > start_time` and `end_time > Clock::now()` (tournament must not have already ended)
-- `start_time` may be in the past to create an already-started tournament
-- Initialize Tournament; `prize_lamports = 0`, `finalized = false`
-- Emit `TournamentCreated`
+#### `join_game`
+Signers: player (becomes player two). Assert `state == Pending`, player != player_one, within tournament window. Transfer stake.
 
-### `create_game`
-Signers: `player` (becomes player one)
-- Assert `Clock::now()` is within tournament window
-- Assign `game_id = GameCounter.count`, then increment counter
-- Init Game PDA; set `player_one`, `stake_lamports`, `state = Pending`
-- Init `PlayerProfile` for player 1 via `init_if_needed` (player pays)
-- Transfer `stake_lamports` from player to Game PDA
-- Emit `GameCreated`
+#### `commit_guess`
+Signers: participant. Assert Active or Committing. Store commitment hash. Record commit slot and first_committer.
 
-### `join_game`
-Signers: `player` (becomes player two)
-- Assert `state == Pending`
-- Assert `player != player_one`
-- Assert `Clock::now()` is within tournament window
-- Set `player_two`, `state = Active`
-- Init `PlayerProfile` for player 2 via `init_if_needed` (player pays)
-- Transfer `stake_lamports` from player 2 to Game PDA
-- Emit `GameStarted`
+#### `reveal_guess`
+Signers: participant. Assert Revealing. Verify `SHA-256(R) == commitment`. Extract `guess = R[31] & 1`. If both revealed, resolve.
 
-### `commit_guess`
-Signers: `player`
-- Assert `state == Active || state == Committing`
-- Assert caller is a participant and has not already committed
-- Store commitment; record commit slot
-- Set `first_committer` if not yet set
-- Transition: first commit → `Committing`; second commit → `Revealing`
-- Emit `GuessCommitted`
+#### `resolve_timeout`
+Permissionless. Assert Committing or Revealing and timeout elapsed. Slash non-participant.
 
-Input: `commitment: [u8; 32]` — the SHA-256 hash of the player's random preimage `R`.
+#### `close_game`
+Permissionless. Assert Resolved. Close account, return rent to caller.
 
-### `reveal_guess`
-Signers: `player`
-- Assert `state == Revealing`
-- Assert caller has not already revealed
-- Recompute `sol_sha256(R)` and assert it matches the stored commitment
-- Extract guess: `R[31] & 1` (last bit of preimage encodes the guess)
-- Store guess
-- If both players have revealed: call `resolve_game` (pure function)
-- Emit `GuessRevealed`
+#### `finalize_tournament`
+Permissionless. Assert past end_time and not finalized. Snapshot scores.
 
-Input: `r: [u8; 32]` — the 32-byte random preimage. Client sets `r[31] = (r[31] & 0xFE) | guess` before hashing, so the last bit always encodes the guess.
+#### `claim_reward`
+Signers: player. Assert finalized, not claimed, minimum 5 games. Compute proportional entitlement.
 
-### `resolve_timeout`
-Permissionless — any wallet can call.
-- Assert `state == Committing || state == Revealing`
-- Assert timeout has elapsed (see Timeouts)
-- If one player failed to participate: slash their stake to tournament; return other player's stake; credit the active player a win
-- If both players failed to reveal (`Revealing` with neither revealed): both stakes go to tournament; neither gets a win
-- Update both PlayerProfiles
-- Set `state = Resolved`
-- Emit `TimeoutSlash`
+### Payoff Logic
 
-### `close_game`
-Permissionless — any wallet can call.
-- Assert `state == Resolved`
-- Anchor's `close = caller` constraint transfers rent-exempt lamports to caller and zeros the discriminator
-- Incentivizes callers to clean up resolved game accounts
+Same team (matchup_type = 0): both correct = both keep stake. Any wrong = both lose to tournament.
 
-### `finalize_tournament`
-Permissionless — any wallet can call.
-- Assert `Clock::now() > tournament.end_time`
-- Assert `tournament.finalized == false`
-- Snapshot `prize_snapshot = prize_lamports` and `total_score_snapshot = sum of all player scores`
-- Set `finalized = true`
-- Emit `TournamentFinalized`
+Different teams (matchup_type = 1): one correct = winner takes all. Both correct = first committer wins. Both wrong = full refund.
 
-Note: computing `total_score_snapshot` requires all PlayerProfile accounts to be passed in as remaining accounts. The instruction iterates them, verifies each is a valid PDA for this tournament, and sums scores. Caller constructs the account list off-chain.
+All arithmetic uses `checked_mul`/`checked_div`. Lamport conservation asserted after each resolution.
 
-### `claim_reward`
-Signers: `player`
-- Assert `tournament.finalized == true`
-- Assert `player_profile.claimed == false`
-- Assert `player_profile.total_games >= 5` (minimum games floor)
-- Compute entitlement: `(player_score / total_score_snapshot) × prize_snapshot`
-- Transfer entitlement from Tournament PDA to player wallet
-- Set `player_profile.claimed = true`
-- Emit `RewardClaimed`
-
----
-
-## Payoff Logic (`resolve_game` pure function)
-
-Called from `reveal_guess` when both guesses are in. Routes to `resolve_homogenous` or `resolve_heterogeneous` based on `game.matchup_type`.
-
-Let `S = stake_lamports`. A correct guess means guessing the actual `matchup_type` value (0 for same team, 1 for different team).
-
-**Same team (matchup_type = 0) — cooperative:**
-
-| Outcome | P1 return | P2 return | Tournament receives |
-|---|---|---|---|
-| Both guess correctly (both guess 0) | `S` | `S` | `0` |
-| At least one wrong | `0` | `0` | `2 * S` |
-
-**Different teams (matchup_type = 1) — adversarial:**
-
-Winner rule: if exactly one player is wrong, the correct player wins. If both correct, the first committer wins. If both wrong, full refund to both.
-
-| Outcome | P1 return | P2 return | Tournament receives |
-|---|---|---|---|
-| One correct, one wrong | correct: `2*S` / wrong: `0` | wrong: `0` / correct: `2*S` | `0` |
-| Both correct | first committer: `2*S` | `0` (if p2 first: `2*S`) | `0` |
-| Both wrong | `S` | `S` | `0` |
-
-All arithmetic uses `checked_mul` / `checked_div`. Lamport conservation is asserted as an invariant after each resolution.
-
-After resolving:
-- Transfer return amounts to player wallets
-- Transfer tournament portion to Tournament PDA `prize_lamports`
-- Check `tournament.end_time`: if `Clock::now() > end_time`, return stakes in full and contribute nothing to the prize pool (late resolution)
-- Update `PlayerProfile.wins`, `total_games`, and `score = wins * wins / total_games` for both players
-- Set `state = Resolved`, close Game account
-
----
-
-## Scoring
-
-```
-score = wins * wins / total_games
-```
-
-- Minimum 5 `total_games` required to be eligible for `claim_reward`
-- Tie-breaking: higher `total_games` wins; if still tied, first to claim wins (no special handling needed)
-- ELO is a future off-chain display metric — not used for on-chain payout
-
----
-
-## Timeouts
-
-Measured in Solana slots (~400ms each).
+### Timeouts
 
 | Stage | Timeout |
 |---|---|
-| Committing (waiting for second commit) | 7,200 slots (~1 hour) |
-| Revealing (waiting for reveal after both committed) | 14,400 slots (~2 hours) |
+| Committing | 7,200 slots (~1 hour) |
+| Revealing | 14,400 slots (~2 hours) |
 
-`commit_timeout_slots` is stored on the Game account and set at creation using these constants. Defined as program constants:
+### Error Types
 
 ```rust
-pub const COMMIT_TIMEOUT_SLOTS: u64 = 7_200;
-pub const REVEAL_TIMEOUT_SLOTS: u64 = 14_400;
+InvalidGameState, InvalidStateTransition, NotAParticipant, AlreadyCommitted,
+AlreadyRevealed, AlreadyClaimed, CannotJoinOwnGame, StakeMismatch,
+CommitmentMismatch, TimeoutNotElapsed, InvalidTournamentTimes,
+TournamentNotEnded, TournamentNotFinalized, EmptyPrizePool,
+OutsideTournamentWindow, ProfileTournamentMismatch, BelowMinimumGames,
+ArithmeticOverflow, TooManyAccounts
+```
+
+### Events
+
+```rust
+TournamentCreated, GameCreated, GameStarted, GuessCommitted, GuessRevealed,
+GameResolved, TimeoutSlash, TournamentFinalized, RewardClaimed
 ```
 
 ---
 
-## Lamport Flow
+## Testing
 
-```
-Player 1 ──join_game──► Game PDA (holds 2 × stake_lamports)
-Player 2 ──join_game──┘
+**Unit tests:** Every pure function (payoff resolution, scoring computation, payment calculation) must have exhaustive unit tests in `#[cfg(test)]` modules. Test boundary conditions: zero values, maximum values, overflow scenarios.
 
-Game PDA ──resolve──► Player 1 wallet     (return per payoff matrix)
-                  ──► Player 2 wallet     (return per payoff matrix)
-                  ──► Tournament PDA      (losing portion)
+**End-to-end tests:** Full instruction flows against a local validator using Anchor's test harness. Cover:
+- Every instruction in every valid state
+- Every error path (invalid state transitions, unauthorized callers, expired deadlines)
+- Every state transition in the state machine
+- The full task lifecycle: create -> claim -> submit -> verify -> finalize
+- Challenge flows: challenge -> resolve (challenger wins), challenge -> resolve (agent wins)
+- Timeout flows: expire from Open, Claimed, and Submitted states
+- Emergency return with multiple tasks
+- Session delegation and revocation
+- Concurrent claim limit enforcement
 
-Tournament PDA ──claim_reward──► Player wallet  (proportional entitlement)
-```
-
----
-
-## Error Types
-
-```rust
-InvalidGameState            // instruction not valid for current state
-InvalidStateTransition      // transition not in the state machine
-NotAParticipant             // caller is not player_one or player_two
-AlreadyCommitted            // player has already committed
-AlreadyRevealed             // player has already revealed
-AlreadyClaimed              // player has already claimed reward
-CannotJoinOwnGame           // player_two == player_one
-StakeMismatch               // lamports sent != stake_lamports
-CommitmentMismatch          // SHA-256(R) != stored commitment
-TimeoutNotElapsed           // resolve_timeout called too early
-InvalidTournamentTimes      // end_time <= start_time in create_tournament
-TournamentNotEnded          // finalize or claim called before end_time
-TournamentNotFinalized      // claim called before finalize_tournament
-EmptyPrizePool              // nothing to claim
-OutsideTournamentWindow     // create_game or join_game called outside tournament start/end
-ProfileTournamentMismatch   // player profile belongs to a different tournament
-BelowMinimumGames           // player has fewer than 5 games
-ArithmeticOverflow          // checked arithmetic failure
-TooManyAccounts             // finalize_tournament passed more than 30 remaining accounts
-```
-
----
-
-## Events
-
-```rust
-TournamentCreated   { tournament_id: u64, start_time: i64, end_time: i64 }
-GameCreated         { game_id: u64, tournament_id: u64, player_one: Pubkey, stake_lamports: u64 }
-GameStarted         { game_id: u64, tournament_id: u64, player_one: Pubkey, player_two: Pubkey }
-GuessCommitted      { game_id: u64, player: Pubkey, commit_slot: u64 }
-GuessRevealed       { game_id: u64, player: Pubkey }
-GameResolved        { game_id: u64, p1_guess: u8, p2_guess: u8, p1_return: u64, p2_return: u64, tournament_gain: u64 }
-TimeoutSlash        { game_id: u64, slashed_player: Pubkey, slash_amount: u64 }
-TournamentFinalized { tournament_id: u64, prize_snapshot: u64, total_score_snapshot: u64 }
-RewardClaimed       { tournament_id: u64, player: Pubkey, amount: u64 }
-```
+**CI runs unit tests only** (no network calls). End-to-end tests are local system verification.
 
 ---
 
 ## Open Questions
 
-- **Heterogeneous matchup payoffs** — the payoff matrix for human vs. AI matches is defined in root `CLAUDE.md` but not implemented in v1. When AI agents are added, `matchup_type` on the Game account drives the resolution logic.
 - **`finalize_tournament` scaling** — passing all PlayerProfile accounts as remaining accounts works for small tournaments but hits transaction size limits at scale. Redesign needed before production.
+- **Coordination game DAO treasury integration** — the exact mechanism for routing losing stake to the Squads treasury PDA needs implementation. The tournament currently holds its own prize pool; migration to Squads treasury is a future upgrade.
+- **Switchboard Function implementation** — the custom Switchboard Function that calls YouTube Data API v3, computes composite score, and posts attestation needs to be specified and built. This is off-chain code that runs in Switchboard's TEE environment.

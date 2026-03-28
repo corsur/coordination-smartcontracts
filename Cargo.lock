@@ -843,6 +843,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "shared"
+version = "0.1.0"
+dependencies = [
+ "borsh 0.10.4",
+]
+
+[[package]]
+name = "shillbot"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "shared",
+ "solana-sha256-hasher",
+]
+
+[[package]]
 name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

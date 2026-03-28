@@ -141,6 +141,7 @@ describe("shillbot", () => {
         .accountsPartial({
           globalState: globalPda,
           authority: authority.publicKey,
+          treasury: treasury.publicKey,
           systemProgram: SystemProgram.programId,
         })
         .rpc();
@@ -148,6 +149,7 @@ describe("shillbot", () => {
       const global = await program.account.globalState.fetch(globalPda);
       assert.equal(global.taskCounter.toString(), "0");
       assert.equal(global.authority.toString(), authority.publicKey.toString());
+      assert.equal(global.treasury.toString(), treasury.publicKey.toString());
       assert.equal(global.protocolFeeBps, PROTOCOL_FEE_BPS);
       assert.equal(
         global.qualityThreshold.toString(),

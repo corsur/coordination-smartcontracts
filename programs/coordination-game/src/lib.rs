@@ -15,7 +15,7 @@ use instructions::*;
 declare_id!("2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P");
 
 #[program]
-pub mod coordination {
+pub mod coordination_game {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {

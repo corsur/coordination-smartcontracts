@@ -1,10 +1,10 @@
 {
-  "name": "@corsur/coordination-sdk",
+  "name": "@corsur/coordination-game-sdk",
   "version": "0.0.0-78d4c88-5",
-  "description": "Anchor-generated TypeScript types for the Coordination program",
-  "types": "./coordination.ts",
+  "description": "Anchor-generated TypeScript types for the Coordination Game program",
+  "types": "./coordination_game.ts",
   "files": [
-    "coordination.ts"
+    "coordination_game.ts"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

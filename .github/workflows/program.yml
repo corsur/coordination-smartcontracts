@@ -44,7 +44,7 @@ jobs:
 
       - name: Build programs individually (shared crate is a library, not a program)
         run: |
-          anchor build -p coordination
+          anchor build -p coordination-game
           anchor build -p shillbot
 
       - run: npm run lint
@@ -95,12 +95,12 @@ jobs:
       - name: Write program keypairs
         run: |
           mkdir -p target/deploy
-          echo '${{ secrets.ANCHOR_PROGRAM_KEYPAIR }}' > target/deploy/coordination-keypair.json
+          echo '${{ secrets.ANCHOR_PROGRAM_KEYPAIR }}' > target/deploy/coordination_game-keypair.json
           echo '${{ secrets.SHILLBOT_PROGRAM_KEYPAIR }}' > target/deploy/shillbot-keypair.json
 
       - name: Build programs individually
         run: |
-          anchor build -p coordination
+          anchor build -p coordination-game
           anchor build -p shillbot
 
       - name: Close orphaned buffer accounts
@@ -111,18 +111,18 @@ jobs:
 
       - name: Deploy programs to devnet
         run: |
-          anchor deploy -p coordination --provider.cluster devnet
+          anchor deploy -p coordination_game --provider.cluster devnet
           anchor deploy -p shillbot --provider.cluster devnet
 
       - name: Publish SDK to GitHub Packages
         run: |
-          # Coordination SDK
-          cp target/types/coordination.ts sdk/coordination.ts
+          # Coordination Game SDK
+          cp target/types/coordination_game.ts sdk/coordination_game.ts
           node -e "
-            const idl = require('./target/idl/coordination.json');
+            const idl = require('./target/idl/coordination_game.json');
             const fs = require('fs');
-            fs.appendFileSync('sdk/coordination.ts',
-              '\nexport const IDL: Coordination = ' + JSON.stringify(idl, null, 2) + ' as unknown as Coordination;\n'
+            fs.appendFileSync('sdk/coordination_game.ts',
+              '\nexport const IDL: CoordinationGame = ' + JSON.stringify(idl, null, 2) + ' as unknown as CoordinationGame;\n'
             );
           "
           # Shillbot SDK

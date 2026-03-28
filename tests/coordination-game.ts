@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program, BN } from "@coral-xyz/anchor";
-import { Coordination } from "../target/types/coordination";
+import { CoordinationGame } from "../target/types/coordination_game";
 import { createHash, randomBytes } from "crypto";
 import {
   Keypair,
@@ -34,10 +34,11 @@ function generateCommit(guess: 0 | 1): Commit {
 // Test suite
 // ---------------------------------------------------------------------------
 
-describe("coordination", () => {
+describe("coordination-game", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace.coordination as Program<Coordination>;
+  const program = anchor.workspace
+    .coordinationGame as Program<CoordinationGame>;
 
   const player1 = Keypair.generate();
   const player2 = Keypair.generate();

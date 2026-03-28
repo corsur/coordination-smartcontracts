@@ -6,11 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-coordination = "2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P"
+coordination_game = "2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P"
 shillbot = "2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi"
 
 [programs.devnet]
-coordination = "2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P"
+coordination_game = "2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P"
 shillbot = "2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi"
 
 [registry]

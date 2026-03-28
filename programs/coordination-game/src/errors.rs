@@ -63,4 +63,12 @@ pub enum CoordinationError {
     EscrowAlreadyConsumed,
     #[msg("Escrow is not valid for this game (wrong player, tournament, or amount)")]
     EscrowInvalid,
+
+    // Session
+    #[msg("Session has expired")]
+    SessionExpired,
+    #[msg("Session authority does not match the player")]
+    SessionPlayerMismatch,
+    #[msg("Session signer does not match the session key")]
+    SessionSignerMismatch,
 }

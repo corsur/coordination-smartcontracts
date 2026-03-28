@@ -73,3 +73,16 @@ pub struct StakeDeposited {
     pub tournament_id: u64,
     pub amount: u64,
 }
+
+#[event]
+pub struct SessionCreated {
+    pub player: Pubkey,
+    pub session_key: Pubkey,
+    pub expires_at: i64,
+}
+
+#[event]
+pub struct SessionClosed {
+    pub player: Pubkey,
+    pub session_key: Pubkey,
+}

@@ -70,4 +70,41 @@ pub mod coordination_game {
     pub fn close_game(ctx: Context<CloseGame>) -> Result<()> {
         instructions::close_game::close_game(ctx)
     }
+
+    // --- Session key instructions ---
+
+    pub fn create_player_session(ctx: Context<CreatePlayerSession>) -> Result<()> {
+        instructions::create_player_session::create_player_session(ctx)
+    }
+
+    pub fn close_player_session(ctx: Context<ClosePlayerSession>) -> Result<()> {
+        instructions::close_player_session::close_player_session(ctx)
+    }
+
+    pub fn deposit_stake_session(ctx: Context<DepositStakeSession>) -> Result<()> {
+        instructions::deposit_stake_session::deposit_stake_session(ctx)
+    }
+
+    pub fn create_game_session(
+        ctx: Context<CreateGameSession>,
+        stake_lamports: u64,
+        matchup_type: u8,
+    ) -> Result<()> {
+        instructions::create_game_session::create_game_session(ctx, stake_lamports, matchup_type)
+    }
+
+    pub fn join_game_session(ctx: Context<JoinGameSession>) -> Result<()> {
+        instructions::join_game_session::join_game_session(ctx)
+    }
+
+    pub fn commit_guess_session(
+        ctx: Context<CommitGuessSession>,
+        commitment: [u8; 32],
+    ) -> Result<()> {
+        instructions::commit_guess_session::commit_guess_session(ctx, commitment)
+    }
+
+    pub fn reveal_guess_session(ctx: Context<RevealGuessSession>, r: [u8; 32]) -> Result<()> {
+        instructions::reveal_guess_session::reveal_guess_session(ctx, r)
+    }
 }

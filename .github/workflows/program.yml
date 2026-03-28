@@ -26,12 +26,16 @@ jobs:
       - name: Install Anchor CLI
         run: cargo install --git https://github.com/coral-xyz/anchor --tag v0.32.1 anchor-cli --locked
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: 'pnpm'
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       - run: cargo fmt --check
 
@@ -79,13 +83,17 @@ jobs:
       - name: Install Anchor CLI
         run: cargo install --git https://github.com/coral-xyz/anchor --tag v0.32.1 anchor-cli --locked
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: 'pnpm'
           registry-url: 'https://npm.pkg.github.com'
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       - name: Write deploy keypair
         run: |

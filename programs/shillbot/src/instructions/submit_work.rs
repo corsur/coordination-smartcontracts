@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 use crate::errors::ShillbotError;
 use crate::events::WorkSubmitted;
 use crate::state::{AgentState, Task, TaskState};
+use crate::MAX_VIDEO_ID_LENGTH;
 
 /// Agent submits proof of work (YouTube video ID hash).
 /// Must be called before deadline minus submit_margin.
@@ -10,6 +11,12 @@ use crate::state::{AgentState, Task, TaskState};
 pub fn submit_work(ctx: Context<SubmitWork>, video_id: Vec<u8>) -> Result<()> {
     let clock = Clock::get()?;
     let task = &ctx.accounts.task;
+
+    // Checks: video_id length bound (instruction input validation)
+    require!(
+        video_id.len() <= MAX_VIDEO_ID_LENGTH,
+        ShillbotError::VideoIdTooLong
+    );
 
     // Checks: state
     require!(

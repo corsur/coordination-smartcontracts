@@ -9,6 +9,7 @@ pub mod events;
 pub mod instructions;
 pub mod scoring;
 pub mod state;
+pub mod transfers;
 
 use instructions::*;
 
@@ -25,6 +26,7 @@ pub const MIN_CLAIM_BUFFER_SECONDS: i64 = 14_400; // 4 hours
 pub const FREE_CHALLENGE_PERCENT: u16 = 20; // 20% of campaign tasks
 pub const MIN_CHALLENGE_BOND_MULTIPLIER: u8 = 2; // 2x full task price
 pub const MAX_CHALLENGE_BOND_MULTIPLIER: u8 = 5; // 5x full task price
+pub const MAX_VIDEO_ID_LENGTH: usize = 64;
 
 #[program]
 pub mod shillbot {
@@ -72,6 +74,10 @@ pub mod shillbot {
 
     pub fn claim_task(ctx: Context<ClaimTask>) -> Result<()> {
         instructions::claim_task::claim_task(ctx)
+    }
+
+    pub fn close_agent_state(ctx: Context<CloseAgentState>) -> Result<()> {
+        instructions::close_agent_state::close_agent_state(ctx)
     }
 
     pub fn submit_work(ctx: Context<SubmitWork>, video_id: Vec<u8>) -> Result<()> {

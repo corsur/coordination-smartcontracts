@@ -4,6 +4,7 @@ use crate::errors::ShillbotError;
 use crate::events::TaskFinalized;
 use crate::scoring::compute_payment;
 use crate::state::{GlobalState, Task, TaskState};
+use crate::transfers::transfer_lamports;
 
 /// Permissionless crank: anyone can call after the challenge deadline passes.
 /// Releases payment to agent, fee to treasury, remainder to client.
@@ -88,33 +89,14 @@ fn distribute_finalized_payment(
     remainder: u64,
 ) -> Result<()> {
     if payment > 0 {
-        transfer_lamports_from_pda(task_info, agent_info, payment)?;
+        transfer_lamports(task_info, agent_info, payment)?;
     }
     if fee > 0 {
-        transfer_lamports_from_pda(task_info, treasury_info, fee)?;
+        transfer_lamports(task_info, treasury_info, fee)?;
     }
     if remainder > 0 {
-        transfer_lamports_from_pda(task_info, client_info, remainder)?;
+        transfer_lamports(task_info, client_info, remainder)?;
     }
-    Ok(())
-}
-
-/// Transfer lamports from a PDA by directly adjusting lamport balances.
-/// This is safe because the PDA is owned by this program.
-fn transfer_lamports_from_pda(from: &AccountInfo, to: &AccountInfo, amount: u64) -> Result<()> {
-    let from_lamports = from.lamports();
-    let to_lamports = to.lamports();
-
-    let new_from = from_lamports
-        .checked_sub(amount)
-        .ok_or(ShillbotError::ArithmeticOverflow)?;
-    let new_to = to_lamports
-        .checked_add(amount)
-        .ok_or(ShillbotError::ArithmeticOverflow)?;
-
-    **from.try_borrow_mut_lamports()? = new_from;
-    **to.try_borrow_mut_lamports()? = new_to;
-
     Ok(())
 }
 

@@ -58,4 +58,7 @@ pub enum ShillbotError {
 
     #[msg("Computed payment + fee exceeds escrowed lamports")]
     PaymentExceedsEscrow,
+
+    #[msg("Video ID exceeds maximum allowed length")]
+    VideoIdTooLong,
 }

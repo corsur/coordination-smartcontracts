@@ -1,5 +1,6 @@
 pub mod challenge_task;
 pub mod claim_task;
+pub mod close_agent_state;
 pub mod create_session;
 pub mod create_task;
 pub mod emergency_return;
@@ -14,6 +15,7 @@ pub mod verify_task;
 
 pub use challenge_task::*;
 pub use claim_task::*;
+pub use close_agent_state::*;
 pub use create_session::*;
 pub use create_task::*;
 pub use emergency_return::*;

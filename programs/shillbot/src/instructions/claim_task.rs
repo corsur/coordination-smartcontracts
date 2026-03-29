@@ -40,12 +40,15 @@ pub fn claim_task(ctx: Context<ClaimTask>) -> Result<()> {
     // Effects: update agent state
     let agent_state = &mut ctx.accounts.agent_state;
     let agent_key = ctx.accounts.agent.key();
-    agent_state.agent = agent_key;
+    // Only set agent and bump on first initialization (freshly zeroed account)
+    if agent_state.agent == Pubkey::default() {
+        agent_state.agent = agent_key;
+        agent_state.bump = ctx.bumps.agent_state;
+    }
     agent_state.claimed_count = agent_state
         .claimed_count
         .checked_add(1)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
-    agent_state.bump = ctx.bumps.agent_state;
 
     // Effects: update task
     let task = &mut ctx.accounts.task;

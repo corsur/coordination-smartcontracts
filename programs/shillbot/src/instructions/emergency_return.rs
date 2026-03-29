@@ -31,8 +31,6 @@ pub fn emergency_return(ctx: Context<EmergencyReturnAccounts>) -> Result<()> {
         ShillbotError::ArithmeticOverflow
     );
 
-    let mut task_ids: Vec<u64> = Vec::new();
-
     // Process each task account in remaining_accounts.
     // We expect pairs: [task_account, client_account, task_account, client_account, ...]
     let accounts = ctx.remaining_accounts;
@@ -41,6 +39,8 @@ pub fn emergency_return(ctx: Context<EmergencyReturnAccounts>) -> Result<()> {
         .checked_div(2)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
     require!(accounts.len() % 2 == 0, ShillbotError::ArithmeticOverflow);
+
+    let mut task_ids: Vec<u64> = Vec::with_capacity(pair_count);
 
     let mut i: usize = 0;
     // Bounded: pair_count <= 10 (20/2)

@@ -81,3 +81,8 @@ pub struct ParamsUpdated {
     pub protocol_fee_bps: u16,
     pub quality_threshold: u64,
 }
+
+#[event]
+pub struct AgentStateClosed {
+    pub agent: Pubkey,
+}

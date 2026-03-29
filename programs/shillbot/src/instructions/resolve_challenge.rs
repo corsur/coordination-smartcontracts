@@ -4,6 +4,7 @@ use crate::errors::ShillbotError;
 use crate::events::ChallengeResolved;
 use crate::scoring::compute_payment;
 use crate::state::{Challenge, GlobalState, Task, TaskState};
+use crate::transfers::transfer_lamports;
 
 /// Squads multisig resolves a dispute.
 /// If challenger won: escrow returned to client, bond returned to challenger, agent gets $0.
@@ -124,23 +125,6 @@ fn slash_bond(
     Ok(())
 }
 
-fn transfer_lamports(from: &AccountInfo, to: &AccountInfo, amount: u64) -> Result<()> {
-    let from_lamports = from.lamports();
-    let to_lamports = to.lamports();
-
-    let new_from = from_lamports
-        .checked_sub(amount)
-        .ok_or(ShillbotError::ArithmeticOverflow)?;
-    let new_to = to_lamports
-        .checked_add(amount)
-        .ok_or(ShillbotError::ArithmeticOverflow)?;
-
-    **from.try_borrow_mut_lamports()? = new_from;
-    **to.try_borrow_mut_lamports()? = new_to;
-
-    Ok(())
-}
-
 #[derive(Accounts)]
 pub struct ResolveChallenge<'info> {
     #[account(
@@ -157,6 +141,12 @@ pub struct ResolveChallenge<'info> {
     #[account(
         mut,
         close = challenger,
+        seeds = [
+            b"challenge",
+            challenge.task_id.to_le_bytes().as_ref(),
+            challenge.challenger.as_ref(),
+        ],
+        bump = challenge.bump,
     )]
     pub challenge: Account<'info, Challenge>,
     #[account(

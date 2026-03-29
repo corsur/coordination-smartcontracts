@@ -19,20 +19,21 @@ pub fn deposit_stake(ctx: Context<DepositStake>) -> Result<()> {
 
     let escrow = &mut ctx.accounts.escrow;
 
-    // Idempotent: if the escrow already has an unconsumed funded deposit, no-op.
-    // This lets callers always call deposit_stake before each game without
-    // worrying about whether a prior deposit is still active.
+    // Idempotent: if the escrow already has an unconsumed funded deposit at the
+    // correct amount, no-op. If the amount doesn't match (e.g., stake was changed
+    // via program upgrade), fall through to re-deposit at the new amount.
     if !escrow.consumed && escrow.amount > 0 {
         require!(
             escrow.player == ctx.accounts.player.key(),
             CoordinationError::InvalidGameState,
         );
-        require!(
-            escrow.amount == FIXED_STAKE_LAMPORTS,
-            CoordinationError::StakeMismatch,
-        );
-        msg!("deposit_stake: escrow already active, no-op");
-        return Ok(());
+        if escrow.amount == FIXED_STAKE_LAMPORTS {
+            msg!("deposit_stake: escrow already active, no-op");
+            return Ok(());
+        }
+        // Stake amount changed — fall through to re-deposit at the new amount.
+        // The old lamports remain in the account; the new transfer tops it up.
+        msg!("deposit_stake: stake amount changed, re-depositing");
     }
     escrow.player = ctx.accounts.player.key();
     escrow.tournament_id = ctx.accounts.tournament.tournament_id;

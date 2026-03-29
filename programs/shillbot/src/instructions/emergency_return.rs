@@ -52,71 +52,13 @@ pub fn emergency_return(ctx: Context<EmergencyReturnAccounts>) -> Result<()> {
             .ok_or(ShillbotError::ArithmeticOverflow)?;
         let client_info = &accounts[client_idx];
 
-        // Verify task is owned by this program
         require!(
             task_info.owner == ctx.program_id,
             ShillbotError::InvalidTaskState
         );
 
-        let data = task_info.try_borrow_data()?;
-        if data.len() >= Task::SPACE {
-            let disc = &data[..8];
-            let expected_disc = Task::DISCRIMINATOR;
-            if disc == expected_disc {
-                if let Ok(task) = Task::try_deserialize(&mut &data[..]) {
-                    // Validate state: only Open or Claimed
-                    require!(
-                        task.state == TaskState::Open || task.state == TaskState::Claimed,
-                        ShillbotError::InvalidTaskState
-                    );
-
-                    // Validate client matches
-                    require!(
-                        client_info.key() == task.client,
-                        ShillbotError::NotTaskClient
-                    );
-
-                    task_ids.push(task.task_id);
-
-                    // Must drop borrow before mutating lamports and data
-                    drop(data);
-
-                    // Close the task account: transfer ALL lamports (escrow + rent)
-                    // to the client and zero the account data.
-                    let all_lamports = task_info.lamports();
-                    let client_lamports = client_info.lamports();
-
-                    let new_client = client_lamports
-                        .checked_add(all_lamports)
-                        .ok_or(ShillbotError::ArithmeticOverflow)?;
-
-                    **task_info.try_borrow_mut_lamports()? = 0;
-                    **client_info.try_borrow_mut_lamports()? = new_client;
-
-                    // Zero account data to mark it as closed
-                    task_info.assign(&anchor_lang::system_program::ID);
-                    let mut task_data = task_info.try_borrow_mut_data()?;
-                    task_data.fill(0);
-                } else {
-                    msg!(
-                        "emergency_return: skipped account at index {} (deserialization failed)",
-                        i
-                    );
-                    drop(data);
-                }
-            } else {
-                msg!(
-                    "emergency_return: skipped account at index {} (discriminator mismatch)",
-                    i
-                );
-                drop(data);
-            }
-        } else {
-            msg!(
-                "emergency_return: skipped account at index {} (insufficient data length)",
-                i
-            );
-            drop(data);
+        if let Some(task_id) = process_emergency_task(task_info, client_info, i)? {
+            task_ids.push(task_id);
         }
 
         i = i.checked_add(1).ok_or(ShillbotError::ArithmeticOverflow)?;
@@ -125,6 +67,70 @@ pub fn emergency_return(ctx: Context<EmergencyReturnAccounts>) -> Result<()> {
     emit!(EmergencyReturn { task_ids });
 
     Ok(())
+}
+
+/// Validate, close, and return escrow for a single task account.
+/// Returns the task_id if processed, None if the account was skipped.
+fn process_emergency_task(
+    task_info: &AccountInfo,
+    client_info: &AccountInfo,
+    pair_index: usize,
+) -> Result<Option<u64>> {
+    let data = task_info.try_borrow_data()?;
+
+    if data.len() < Task::SPACE {
+        msg!(
+            "emergency_return: skipped account at index {} (insufficient data)",
+            pair_index
+        );
+        return Ok(None);
+    }
+
+    if &data[..8] != Task::DISCRIMINATOR {
+        msg!(
+            "emergency_return: skipped account at index {} (discriminator mismatch)",
+            pair_index
+        );
+        return Ok(None);
+    }
+
+    let task = match Task::try_deserialize(&mut &data[..]) {
+        Ok(t) => t,
+        Err(_) => {
+            msg!(
+                "emergency_return: skipped account at index {} (deserialization failed)",
+                pair_index
+            );
+            return Ok(None);
+        }
+    };
+
+    require!(
+        task.state == TaskState::Open || task.state == TaskState::Claimed,
+        ShillbotError::InvalidTaskState
+    );
+    require!(
+        client_info.key() == task.client,
+        ShillbotError::NotTaskClient
+    );
+
+    let task_id = task.task_id;
+    drop(data);
+
+    // Close task: transfer ALL lamports to client, zero account data
+    let all_lamports = task_info.lamports();
+    let new_client = client_info
+        .lamports()
+        .checked_add(all_lamports)
+        .ok_or(ShillbotError::ArithmeticOverflow)?;
+
+    **task_info.try_borrow_mut_lamports()? = 0;
+    **client_info.try_borrow_mut_lamports()? = new_client;
+
+    task_info.assign(&anchor_lang::system_program::ID);
+    task_info.try_borrow_mut_data()?.fill(0);
+
+    Ok(Some(task_id))
 }
 
 #[derive(Accounts)]

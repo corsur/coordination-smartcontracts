@@ -63,7 +63,15 @@ pub fn claim_task(ctx: Context<ClaimTask>) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct ClaimTask<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [
+            b"task",
+            task.task_id.to_le_bytes().as_ref(),
+            task.client.as_ref(),
+        ],
+        bump = task.bump,
+    )]
     pub task: Account<'info, Task>,
     /// AgentState PDA tracks the agent's concurrent claim count.
     ///

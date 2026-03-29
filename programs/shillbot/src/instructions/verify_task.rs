@@ -82,7 +82,15 @@ pub fn verify_task(ctx: Context<VerifyTask>, composite_score: u64) -> Result<()>
 
 #[derive(Accounts)]
 pub struct VerifyTask<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [
+            b"task",
+            task.task_id.to_le_bytes().as_ref(),
+            task.client.as_ref(),
+        ],
+        bump = task.bump,
+    )]
     pub task: Account<'info, Task>,
     #[account(
         seeds = [b"shillbot_global"],

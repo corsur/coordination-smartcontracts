@@ -37,28 +37,12 @@ pub fn challenge_task(ctx: Context<ChallengeTask>, total_campaign_tasks: u16) ->
 
     // Determine bond amount
     let is_client_challenge = challenger_key == task.client;
-    let bond_lamports: u64;
-
-    if is_client_challenge {
-        // Client free challenge check: 20% of campaign tasks
-        let free_challenge_limit = (total_campaign_tasks as u64)
-            .checked_mul(FREE_CHALLENGE_PERCENT as u64)
-            .ok_or(ShillbotError::ArithmeticOverflow)?
-            .checked_div(100)
-            .ok_or(ShillbotError::ArithmeticOverflow)?;
-        let free_limit_u16 = u16::try_from(free_challenge_limit)
-            .map_err(|_| error!(ShillbotError::ArithmeticOverflow))?;
-
-        if task.client_challenges < free_limit_u16 {
-            bond_lamports = 0;
-        } else {
-            bond_lamports =
-                compute_challenge_bond(task.escrow_lamports, MIN_CHALLENGE_BOND_MULTIPLIER)?;
-        }
-    } else {
-        bond_lamports =
-            compute_challenge_bond(task.escrow_lamports, MIN_CHALLENGE_BOND_MULTIPLIER)?;
-    }
+    let bond_lamports = determine_bond(
+        is_client_challenge,
+        task.client_challenges,
+        total_campaign_tasks,
+        task.escrow_lamports,
+    )?;
 
     // Effects: initialize challenge
     let challenge = &mut ctx.accounts.challenge;
@@ -108,7 +92,15 @@ pub fn challenge_task(ctx: Context<ChallengeTask>, total_campaign_tasks: u16) ->
 
 #[derive(Accounts)]
 pub struct ChallengeTask<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [
+            b"task",
+            task.task_id.to_le_bytes().as_ref(),
+            task.client.as_ref(),
+        ],
+        bump = task.bump,
+    )]
     pub task: Account<'info, Task>,
     #[account(
         init,
@@ -125,4 +117,28 @@ pub struct ChallengeTask<'info> {
     #[account(mut)]
     pub challenger: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+/// Compute the bond amount for a challenge. Clients get free challenges
+/// up to 20% of campaign tasks; everyone else pays the standard bond.
+fn determine_bond(
+    is_client: bool,
+    client_challenges: u16,
+    total_campaign_tasks: u16,
+    escrow_lamports: u64,
+) -> Result<u64> {
+    if is_client {
+        let free_challenge_limit = (total_campaign_tasks as u64)
+            .checked_mul(FREE_CHALLENGE_PERCENT as u64)
+            .ok_or(ShillbotError::ArithmeticOverflow)?
+            .checked_div(100)
+            .ok_or(ShillbotError::ArithmeticOverflow)?;
+        let free_limit_u16 = u16::try_from(free_challenge_limit)
+            .map_err(|_| error!(ShillbotError::ArithmeticOverflow))?;
+
+        if client_challenges < free_limit_u16 {
+            return Ok(0);
+        }
+    }
+    compute_challenge_bond(escrow_lamports, MIN_CHALLENGE_BOND_MULTIPLIER)
 }

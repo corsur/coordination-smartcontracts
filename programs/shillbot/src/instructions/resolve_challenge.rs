@@ -48,9 +48,8 @@ pub fn resolve_challenge(ctx: Context<ResolveChallenge>, challenger_won: bool) -
     let challenge_info = challenge.to_account_info();
 
     let bond_slashed: u64 = if challenger_won {
-        // Return escrow to client
+        // Return escrow to client, return bond to challenger
         transfer_lamports(&task_info, &ctx.accounts.client.to_account_info(), escrow)?;
-        // Return bond to challenger
         if bond > 0 {
             transfer_lamports(
                 &challenge_info,
@@ -60,20 +59,19 @@ pub fn resolve_challenge(ctx: Context<ResolveChallenge>, challenger_won: bool) -
         }
         0
     } else {
-        // Agent won: recompute payment to get fee breakdown
         let (payment, fee) = compute_payment(
             task.composite_score,
             global.quality_threshold,
             escrow,
             global.protocol_fee_bps,
         )?;
+        // Distribute escrow: payment to agent, fee to treasury, remainder to client
         if payment > 0 {
             transfer_lamports(&task_info, &ctx.accounts.agent.to_account_info(), payment)?;
         }
         if fee > 0 {
             transfer_lamports(&task_info, &ctx.accounts.treasury.to_account_info(), fee)?;
         }
-        // Return remainder escrow to client
         let total_out = payment
             .checked_add(fee)
             .ok_or(ShillbotError::ArithmeticOverflow)?;
@@ -88,24 +86,12 @@ pub fn resolve_challenge(ctx: Context<ResolveChallenge>, challenger_won: bool) -
             )?;
         }
         // Slash bond: 50% to agent, 50% to treasury
-        if bond > 0 {
-            let half_bond = bond
-                .checked_div(2)
-                .ok_or(ShillbotError::ArithmeticOverflow)?;
-            let other_half = bond
-                .checked_sub(half_bond)
-                .ok_or(ShillbotError::ArithmeticOverflow)?;
-            transfer_lamports(
-                &challenge_info,
-                &ctx.accounts.agent.to_account_info(),
-                half_bond,
-            )?;
-            transfer_lamports(
-                &challenge_info,
-                &ctx.accounts.treasury.to_account_info(),
-                other_half,
-            )?;
-        }
+        slash_bond(
+            &challenge_info,
+            &ctx.accounts.agent,
+            &ctx.accounts.treasury,
+            bond,
+        )?;
         bond
     };
 
@@ -115,6 +101,26 @@ pub fn resolve_challenge(ctx: Context<ResolveChallenge>, challenger_won: bool) -
         bond_slashed,
     });
 
+    Ok(())
+}
+
+/// Slash bond 50/50 between agent and treasury.
+fn slash_bond(
+    challenge_info: &AccountInfo,
+    agent: &AccountInfo,
+    treasury: &AccountInfo,
+    bond: u64,
+) -> Result<()> {
+    if bond > 0 {
+        let half = bond
+            .checked_div(2)
+            .ok_or(ShillbotError::ArithmeticOverflow)?;
+        let other_half = bond
+            .checked_sub(half)
+            .ok_or(ShillbotError::ArithmeticOverflow)?;
+        transfer_lamports(challenge_info, agent, half)?;
+        transfer_lamports(challenge_info, treasury, other_half)?;
+    }
     Ok(())
 }
 
@@ -140,6 +146,12 @@ pub struct ResolveChallenge<'info> {
     #[account(
         mut,
         close = client,
+        seeds = [
+            b"task",
+            task.task_id.to_le_bytes().as_ref(),
+            task.client.as_ref(),
+        ],
+        bump = task.bump,
     )]
     pub task: Account<'info, Task>,
     #[account(

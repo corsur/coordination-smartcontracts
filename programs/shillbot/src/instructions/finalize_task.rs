@@ -56,30 +56,16 @@ pub fn finalize_task(ctx: Context<FinalizeTask>) -> Result<()> {
     let task = &mut ctx.accounts.task;
     task.state = TaskState::Finalized;
 
-    // Interactions: lamport transfers from the task PDA
-    let task_info = task.to_account_info();
-
-    if payment_amount > 0 {
-        transfer_lamports_from_pda(
-            &task_info,
-            &ctx.accounts.agent.to_account_info(),
-            payment_amount,
-        )?;
-    }
-    if fee_amount > 0 {
-        transfer_lamports_from_pda(
-            &task_info,
-            &ctx.accounts.treasury.to_account_info(),
-            fee_amount,
-        )?;
-    }
-    if remainder > 0 {
-        transfer_lamports_from_pda(
-            &task_info,
-            &ctx.accounts.client.to_account_info(),
-            remainder,
-        )?;
-    }
+    // Interactions: distribute payment, fee, and remainder
+    distribute_finalized_payment(
+        &task.to_account_info(),
+        &ctx.accounts.agent.to_account_info(),
+        &ctx.accounts.treasury.to_account_info(),
+        &ctx.accounts.client.to_account_info(),
+        payment_amount,
+        fee_amount,
+        remainder,
+    )?;
 
     emit!(TaskFinalized {
         task_id: task.task_id,
@@ -88,6 +74,28 @@ pub fn finalize_task(ctx: Context<FinalizeTask>) -> Result<()> {
         fee_amount,
     });
 
+    Ok(())
+}
+
+/// Transfer payment to agent, fee to treasury, remainder to client.
+fn distribute_finalized_payment(
+    task_info: &AccountInfo,
+    agent_info: &AccountInfo,
+    treasury_info: &AccountInfo,
+    client_info: &AccountInfo,
+    payment: u64,
+    fee: u64,
+    remainder: u64,
+) -> Result<()> {
+    if payment > 0 {
+        transfer_lamports_from_pda(task_info, agent_info, payment)?;
+    }
+    if fee > 0 {
+        transfer_lamports_from_pda(task_info, treasury_info, fee)?;
+    }
+    if remainder > 0 {
+        transfer_lamports_from_pda(task_info, client_info, remainder)?;
+    }
     Ok(())
 }
 
@@ -115,6 +123,12 @@ pub struct FinalizeTask<'info> {
     #[account(
         mut,
         close = client,
+        seeds = [
+            b"task",
+            task.task_id.to_le_bytes().as_ref(),
+            task.client.as_ref(),
+        ],
+        bump = task.bump,
     )]
     pub task: Account<'info, Task>,
     #[account(

@@ -73,7 +73,15 @@ pub fn submit_work(ctx: Context<SubmitWork>, video_id: Vec<u8>) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct SubmitWork<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [
+            b"task",
+            task.task_id.to_le_bytes().as_ref(),
+            task.client.as_ref(),
+        ],
+        bump = task.bump,
+    )]
     pub task: Account<'info, Task>,
     #[account(
         mut,

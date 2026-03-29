@@ -40,38 +40,8 @@ pub fn expire_task(ctx: Context<ExpireTask>) -> Result<()> {
     }
 
     // Effects: if task was Claimed, decrement the agent's claim count.
-    // The agent_state is passed as the first remaining_account for Claimed tasks.
     if state_at_expiry == TaskState::Claimed {
-        require!(
-            !ctx.remaining_accounts.is_empty(),
-            ShillbotError::ArithmeticOverflow
-        );
-        let agent_state_info = &ctx.remaining_accounts[0];
-
-        // Verify the account is owned by this program
-        require!(
-            agent_state_info.owner == ctx.program_id,
-            ShillbotError::InvalidTaskState
-        );
-
-        // Deserialize and validate
-        let mut data = agent_state_info.try_borrow_mut_data()?;
-        let mut agent_state = AgentState::try_deserialize(&mut &data[..])?;
-
-        // Verify this is the correct agent_state for the task's agent
-        require!(agent_state.agent == task.agent, ShillbotError::NotTaskAgent);
-        require!(
-            agent_state.claimed_count > 0,
-            ShillbotError::ArithmeticOverflow
-        );
-
-        agent_state.claimed_count = agent_state
-            .claimed_count
-            .checked_sub(1)
-            .ok_or(ShillbotError::ArithmeticOverflow)?;
-
-        // Write back
-        agent_state.try_serialize(&mut &mut data[..])?;
+        decrement_agent_claim_count(ctx.remaining_accounts, ctx.program_id, &task.agent)?;
     }
 
     let escrow = task.escrow_lamports;
@@ -110,6 +80,12 @@ pub struct ExpireTask<'info> {
     #[account(
         mut,
         close = client,
+        seeds = [
+            b"task",
+            task.task_id.to_le_bytes().as_ref(),
+            task.client.as_ref(),
+        ],
+        bump = task.bump,
     )]
     pub task: Account<'info, Task>,
     /// CHECK: Validated as task.client.
@@ -120,4 +96,43 @@ pub struct ExpireTask<'info> {
     pub client: AccountInfo<'info>,
     // For Claimed tasks, the agent's AgentState account must be passed
     // as the first remaining_account (mut) so claimed_count can be decremented.
+}
+
+/// Decrement the agent's concurrent claim count when a Claimed task expires.
+/// The AgentState is passed as the first remaining_account.
+fn decrement_agent_claim_count(
+    remaining_accounts: &[AccountInfo],
+    program_id: &Pubkey,
+    expected_agent: &Pubkey,
+) -> Result<()> {
+    require!(
+        !remaining_accounts.is_empty(),
+        ShillbotError::ArithmeticOverflow
+    );
+    let agent_state_info = &remaining_accounts[0];
+
+    require!(
+        agent_state_info.owner == program_id,
+        ShillbotError::InvalidTaskState
+    );
+
+    let mut data = agent_state_info.try_borrow_mut_data()?;
+    let mut agent_state = AgentState::try_deserialize(&mut &data[..])?;
+
+    require!(
+        agent_state.agent == *expected_agent,
+        ShillbotError::NotTaskAgent
+    );
+    require!(
+        agent_state.claimed_count > 0,
+        ShillbotError::ArithmeticOverflow
+    );
+
+    agent_state.claimed_count = agent_state
+        .claimed_count
+        .checked_sub(1)
+        .ok_or(ShillbotError::ArithmeticOverflow)?;
+
+    agent_state.try_serialize(&mut &mut data[..])?;
+    Ok(())
 }

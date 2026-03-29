@@ -1,6 +1,7 @@
 pub mod claim_reward;
 pub mod close_game;
 pub mod close_player_session;
+pub mod close_session_by_delegate;
 pub mod commit_guess;
 pub mod commit_guess_session;
 pub mod create_game;
@@ -22,6 +23,7 @@ pub mod utils;
 pub use claim_reward::*;
 pub use close_game::*;
 pub use close_player_session::*;
+pub use close_session_by_delegate::*;
 pub use commit_guess::*;
 pub use commit_guess_session::*;
 pub use create_game::*;

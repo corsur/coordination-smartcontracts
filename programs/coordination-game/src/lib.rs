@@ -81,6 +81,10 @@ pub mod coordination_game {
         instructions::close_player_session::close_player_session(ctx)
     }
 
+    pub fn close_session_by_delegate(ctx: Context<CloseSessionByDelegate>) -> Result<()> {
+        instructions::close_session_by_delegate::close_session_by_delegate(ctx)
+    }
+
     pub fn deposit_stake_session(ctx: Context<DepositStakeSession>) -> Result<()> {
         instructions::deposit_stake_session::deposit_stake_session(ctx)
     }

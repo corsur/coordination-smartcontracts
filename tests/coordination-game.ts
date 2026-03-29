@@ -44,7 +44,7 @@ describe("coordination-game", () => {
   const player2 = Keypair.generate();
 
   const TOURNAMENT_ID = new BN(1);
-  const STAKE = new BN(10_000_000); // 0.01 SOL
+  const STAKE = new BN(50_000_000); // 0.05 SOL
   const GUESS_SAME_TEAM = 0;
   const GUESS_DIFF_TEAM = 1;
 

@@ -3,8 +3,10 @@ use anchor_lang::prelude::*;
 /// Session duration: 24 hours in seconds.
 pub const SESSION_DURATION_SECONDS: i64 = 86_400;
 
-/// SOL to transfer to session PDA for transaction fees (0.05 SOL).
-pub const SESSION_FEE_FUND_LAMPORTS: u64 = 50_000_000;
+/// Deprecated: the session PDA is a data account and does not need fee funding.
+/// Transaction fees are paid by the session keypair (funded separately in the frontend).
+/// Kept as zero to avoid breaking the instruction interface.
+pub const SESSION_FEE_FUND_LAMPORTS: u64 = 0;
 
 /// Ephemeral session authority that lets a player delegate transaction signing
 /// to a temporary keypair. The player signs once to create the session; all
@@ -120,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn session_fee_fund_is_point_zero_five_sol() {
-        assert_eq!(SESSION_FEE_FUND_LAMPORTS, 50_000_000);
+    fn session_fee_fund_is_zero() {
+        assert_eq!(SESSION_FEE_FUND_LAMPORTS, 0);
     }
 }

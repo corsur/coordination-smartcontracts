@@ -1,7 +1,6 @@
 use crate::events::SessionCreated;
-use crate::state::{SessionAuthority, SESSION_DURATION_SECONDS, SESSION_FEE_FUND_LAMPORTS};
+use crate::state::{SessionAuthority, SESSION_DURATION_SECONDS};
 use anchor_lang::prelude::*;
-use anchor_lang::system_program;
 
 /// Create a session authority PDA so the player can delegate transaction
 /// signing to an ephemeral session key for the next 24 hours. A small SOL
@@ -27,18 +26,6 @@ pub fn create_player_session(ctx: Context<CreatePlayerSession>) -> Result<()> {
         session.session_key == ctx.accounts.session_key.key(),
         crate::errors::CoordinationError::SessionSignerMismatch,
     );
-
-    // Transfer fee funding SOL from player to session authority PDA
-    system_program::transfer(
-        CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            system_program::Transfer {
-                from: ctx.accounts.player.to_account_info(),
-                to: ctx.accounts.session_authority.to_account_info(),
-            },
-        ),
-        SESSION_FEE_FUND_LAMPORTS,
-    )?;
 
     emit!(SessionCreated {
         player: ctx.accounts.player.key(),

@@ -68,7 +68,6 @@ pub fn create_task(
     task.submitted_at = 0;
     task.verified_at = 0;
     task.challenge_deadline = 0;
-    task.client_challenges = 0;
     task.bump = ctx.bumps.task;
 
     // Interactions: transfer escrow from client to task PDA

@@ -299,7 +299,6 @@ created_at:           i64
 submitted_at:         i64         0 until submitted
 verified_at:          i64         0 until oracle attestation
 challenge_deadline:   i64         0 until challenge window starts
-client_challenges:    u16         count of free challenges used by client on this campaign
 bump:                 u8
 ```
 
@@ -429,10 +428,9 @@ Permissionless crank — anyone can call after challenge deadline.
 Signers: `challenger`
 - Assert `state == Verified`
 - Assert `Clock::now() < challenge_deadline`
-- Compute required bond: `2-5x escrow_lamports` (full task price, not computed payout)
-- **Client exception:** if `challenger == task.client`, check campaign-level free challenge count. If below 20% of total campaign tasks, bond = 0. Otherwise, standard bond.
+- Compute required bond: `2-5x escrow_lamports` (full task price, not computed payout). All challengers (including the client) pay the standard bond.
 - Init Challenge PDA
-- Transfer bond from challenger to Challenge PDA (if bond > 0)
+- Transfer bond from challenger to Challenge PDA
 - Set `state = Disputed`
 - Emit `TaskChallenged { task_id, challenger, bond_lamports, is_client_challenge }`
 
@@ -479,7 +477,6 @@ pub const VERIFICATION_TIMEOUT_SECONDS: i64 = 1_209_600; // 14 days
 pub const MAX_CONCURRENT_CLAIMS: u8 = 5;
 pub const MAX_SCORE: u64 = 1_000_000;                 // fixed-point 1e6
 pub const MIN_CLAIM_BUFFER_SECONDS: i64 = 14_400;     // 4 hours
-pub const FREE_CHALLENGE_PERCENT: u16 = 20;            // 20% of campaign tasks
 pub const MIN_CHALLENGE_BOND_MULTIPLIER: u8 = 2;       // 2x full task price
 pub const MAX_CHALLENGE_BOND_MULTIPLIER: u8 = 5;       // 5x full task price
 ```
@@ -501,7 +498,6 @@ ScoreOutOfBounds              // composite score exceeds MAX_SCORE
 ChallengeWindowClosed         // challenge attempted after window expired
 ChallengeWindowOpen           // finalize attempted before window closes
 InsufficientBond              // challenge bond below minimum
-FreeChallengesExhausted       // client used all 20% free challenges
 VerificationTimeoutNotReached // expire called on Submitted task before T+14d
 InvalidSessionDelegate        // session key not authorized for this instruction
 ArithmeticOverflow            // checked arithmetic failure
@@ -782,5 +778,4 @@ GameResolved, TimeoutSlash, TournamentFinalized, RewardClaimed
 - **`finalize_tournament` scaling** — passing all PlayerProfile accounts as remaining accounts works for small tournaments but hits transaction size limits at scale. Redesign needed before production.
 - **Coordination game DAO treasury integration** — the exact mechanism for routing losing stake to the Squads treasury PDA needs implementation. The tournament currently holds its own prize pool; migration to Squads treasury is a future upgrade.
 - **Switchboard Function implementation** — the custom Switchboard Function that calls YouTube Data API v3, computes composite score, and posts attestation needs to be specified and built. This is off-chain code that runs in Switchboard's TEE environment.
-- **`client_challenges` tracked per-Task not per-Campaign** — the free challenge counter (`client_challenges`) is stored on each Task account, meaning it resets with every new task. A client effectively gets unlimited free challenges (one per task). The `total_campaign_tasks` parameter in `challenge_task` is caller-supplied and unverified on-chain. Fix requires either: (a) a Campaign PDA with a shared challenge counter across all tasks in the campaign, or (b) removing the free challenge feature for v1. Acceptable for devnet; must be resolved before mainnet.
 - **`emergency_return` does not decrement AgentState.claimed_count** — when the multisig emergency-returns Claimed tasks, the affected agents' `AgentState.claimed_count` is not decremented. This is conservative (prevents over-claiming) but means agents may temporarily be unable to claim their full quota. The count self-corrects as other tasks are submitted or expired.

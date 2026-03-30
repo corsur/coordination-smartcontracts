@@ -5,7 +5,7 @@ pub struct Challenge {
     pub task_id: u64,
     pub challenger: Pubkey,
     pub bond_lamports: u64,
-    /// True if challenger is the task's client (free if within 20% cap).
+    /// True if challenger is the task's client.
     pub is_client_challenge: bool,
     pub created_at: i64,
     pub resolved: bool,

@@ -44,9 +44,6 @@ pub enum ShillbotError {
     #[msg("Challenge bond below minimum required")]
     InsufficientBond,
 
-    #[msg("Client has exhausted free challenge quota for this campaign")]
-    FreeChallengesExhausted,
-
     #[msg("Expire called on Submitted task before T+14d verification timeout")]
     VerificationTimeoutNotReached,
 

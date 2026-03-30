@@ -59,8 +59,6 @@ pub struct Task {
     pub verified_at: i64,
     /// 0 until challenge window starts.
     pub challenge_deadline: i64,
-    /// Count of free challenges used by the client on this campaign.
-    pub client_challenges: u16,
     pub bump: u8,
 }
 
@@ -83,7 +81,6 @@ impl Task {
         + 8   // submitted_at
         + 8   // verified_at
         + 8   // challenge_deadline
-        + 2   // client_challenges
         + 1; // bump
 }
 

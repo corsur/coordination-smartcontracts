@@ -117,6 +117,17 @@ jobs:
           anchor deploy -p coordination_game --provider.cluster devnet
           anchor deploy -p shillbot --provider.cluster devnet
 
+      - name: Verify upgrade authority (post-deploy)
+        run: |
+          bash scripts/check-upgrade-authority.sh \
+            --cluster devnet \
+            --program-id 2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P
+          bash scripts/check-upgrade-authority.sh \
+            --cluster devnet \
+            --program-id 2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi
+        env:
+          EXPECTED_MULTISIG_PUBKEY: ${{ vars.SQUADS_MULTISIG_PUBKEY }}
+
       - name: Publish SDK to GitHub Packages
         run: |
           # Coordination Game SDK

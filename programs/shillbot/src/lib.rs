@@ -23,7 +23,6 @@ pub const VERIFICATION_TIMEOUT_SECONDS: i64 = 1_209_600; // 14 days
 pub const MAX_EMERGENCY_RETURN_ACCOUNTS: usize = 20;
 pub const MAX_CONCURRENT_CLAIMS: u8 = 5;
 pub const MIN_CLAIM_BUFFER_SECONDS: i64 = 14_400; // 4 hours
-pub const FREE_CHALLENGE_PERCENT: u16 = 20; // 20% of campaign tasks
 pub const MIN_CHALLENGE_BOND_MULTIPLIER: u8 = 2; // 2x full task price
 pub const MAX_CHALLENGE_BOND_MULTIPLIER: u8 = 5; // 5x full task price
 pub const MAX_VIDEO_ID_LENGTH: usize = 64;
@@ -92,8 +91,8 @@ pub mod shillbot {
         instructions::finalize_task::finalize_task(ctx)
     }
 
-    pub fn challenge_task(ctx: Context<ChallengeTask>, total_campaign_tasks: u16) -> Result<()> {
-        instructions::challenge_task::challenge_task(ctx, total_campaign_tasks)
+    pub fn challenge_task(ctx: Context<ChallengeTask>) -> Result<()> {
+        instructions::challenge_task::challenge_task(ctx)
     }
 
     pub fn resolve_challenge(ctx: Context<ResolveChallenge>, challenger_won: bool) -> Result<()> {

@@ -814,7 +814,7 @@ describe("shillbot", () => {
 
       try {
         await program.methods
-          .challengeTask(10)
+          .challengeTask()
           .accountsPartial({
             task: openTaskPda,
             challenge: challPda,
@@ -1210,63 +1210,9 @@ describe("shillbot", () => {
   // 11. Below Threshold (score < quality_threshold => payment = 0)
   // ---------------------------------------------------------------------------
 
-  describe("below threshold", () => {
-    // This test verifies behavior via the scoring logic. Since verify_task
-    // can't execute on local validator due to staleness, we test by
-    // verifying the expected payment computation off-chain.
-
-    it("payment is zero when score is below threshold", () => {
-      // Replicate the on-chain compute_payment logic
-      const compositeScore = 100_000; // below threshold of 200_000
-      const qualityThreshold = 200_000;
-      const escrow = 100_000_000;
-      const feeBps = 1000;
-
-      // On-chain: if composite_score < quality_threshold, payment = 0
-      if (compositeScore < qualityThreshold) {
-        assert.isTrue(
-          true,
-          "Below threshold: payment should be 0, full escrow returned to client"
-        );
-      } else {
-        assert.fail("Score should be below threshold");
-      }
-    });
-
-    it("payment is zero when score equals threshold", () => {
-      const compositeScore = 200_000; // equals threshold
-      const qualityThreshold = 200_000;
-
-      // On-chain: composite_score < quality_threshold, and if equal,
-      // score_above = 0 so gross_payment = 0
-      assert.isTrue(
-        compositeScore >= qualityThreshold,
-        "Score equals threshold"
-      );
-      // score_above = composite_score - quality_threshold = 0
-      // gross = escrow * 0 / score_range = 0
-      const scoreAbove = compositeScore - qualityThreshold;
-      assert.equal(scoreAbove, 0, "Score above threshold should be 0");
-    });
-
-    it("payment scales linearly above threshold", () => {
-      // score = 600_000, threshold = 200_000, escrow = 1_000_000, fee = 10%
-      const compositeScore = 600_000;
-      const qualityThreshold = 200_000;
-      const escrow = 1_000_000;
-      const feeBps = 1000;
-
-      const scoreRange = MAX_SCORE - qualityThreshold; // 800_000
-      const scoreAbove = compositeScore - qualityThreshold; // 400_000
-      const grossPayment = Math.floor((escrow * scoreAbove) / scoreRange); // 500_000
-      const fee = Math.floor((grossPayment * feeBps) / 10_000); // 50_000
-      const payment = grossPayment - fee; // 450_000
-
-      assert.equal(payment, 450_000);
-      assert.equal(fee, 50_000);
-      assert.isTrue(payment + fee <= escrow);
-    });
-  });
+  // "below threshold" off-chain arithmetic tests removed — duplicates the 19
+  // Rust unit tests in programs/shillbot/src/scoring.rs. Payment logic is now
+  // tested on-chain via the bankrun lifecycle tests (tests/shillbot-lifecycle.ts).
 
   // ---------------------------------------------------------------------------
   // 12. Session Delegate

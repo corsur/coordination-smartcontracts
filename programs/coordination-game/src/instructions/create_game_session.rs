@@ -3,13 +3,13 @@ use crate::events::GameCreated;
 use crate::instructions::session_utils::validate_session_authority;
 use crate::instructions::utils::transfer_lamports;
 use crate::state::{
-    Game, GameCounter, GameState, PlayerProfile, SessionAuthority, StakeEscrow, Tournament,
-    COMMIT_TIMEOUT_SLOTS, FIXED_STAKE_LAMPORTS, GUESS_UNREVEALED,
+    Game, GameCounter, GameState, GlobalConfig, PlayerProfile, SessionAuthority, StakeEscrow,
+    Tournament, COMMIT_TIMEOUT_SLOTS, FIXED_STAKE_LAMPORTS, GUESS_UNREVEALED, REVEAL_TIMEOUT_SLOTS,
 };
 use anchor_lang::prelude::*;
 
 /// Session-delegated variant of `create_game`. The session key signs instead
-/// of the player wallet.
+/// of the player wallet. Matchmaker authority still required.
 pub fn create_game_session(
     ctx: Context<CreateGameSession>,
     stake_lamports: u64,
@@ -27,9 +27,32 @@ pub fn create_game_session(
     );
     require!(matchup_type <= 1, CoordinationError::InvalidGameState);
 
-    let now = Clock::get()?.unix_timestamp;
+    // Checks: matchmaker authority
+    require!(
+        ctx.accounts.matchmaker.key() == ctx.accounts.global_config.matchmaker,
+        CoordinationError::NotMatchmaker
+    );
+
+    let clock = Clock::get()?;
+    let now = clock.unix_timestamp;
     require!(
         ctx.accounts.tournament.is_active(now),
+        CoordinationError::OutsideTournamentWindow,
+    );
+
+    // Checks: end-of-tournament cutoff
+    let cutoff_slots = COMMIT_TIMEOUT_SLOTS
+        .checked_add(REVEAL_TIMEOUT_SLOTS)
+        .ok_or(CoordinationError::ArithmeticOverflow)?;
+    let slots_per_second: u64 = 2;
+    let cutoff_seconds = cutoff_slots
+        .checked_div(slots_per_second)
+        .ok_or(CoordinationError::ArithmeticOverflow)?;
+    let cutoff_timestamp = now
+        .checked_add(cutoff_seconds as i64)
+        .ok_or(CoordinationError::ArithmeticOverflow)?;
+    require!(
+        cutoff_timestamp < ctx.accounts.tournament.end_time,
         CoordinationError::OutsideTournamentWindow,
     );
 
@@ -152,6 +175,12 @@ pub struct CreateGameSession<'info> {
     )]
     pub escrow: Account<'info, StakeEscrow>,
     pub tournament: Account<'info, Tournament>,
+    #[account(
+        seeds = [b"global_config"],
+        bump = global_config.bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    pub matchmaker: Signer<'info>,
     /// CHECK: The player wallet. Not a signer — the session key signs instead.
     /// Verified against session_authority.player in the handler.
     pub player: UncheckedAccount<'info>,

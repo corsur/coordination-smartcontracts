@@ -49,10 +49,13 @@ describe("coordination-game", () => {
   const GUESS_DIFF_TEAM = 1;
 
   let gameCounterPda: PublicKey;
+  let globalConfigPda: PublicKey;
   let tournamentPda: PublicKey;
   let gamePda: PublicKey;
   let p1ProfilePda: PublicKey;
   let p2ProfilePda: PublicKey;
+  // The provider wallet acts as both authority and matchmaker in tests
+  const matchmaker = provider.wallet;
 
   // Precomputed commits used across the commit and reveal tests (same-team game)
   const p1Commit = generateCommit(GUESS_SAME_TEAM);
@@ -110,6 +113,11 @@ describe("coordination-game", () => {
       program.programId
     );
 
+    [globalConfigPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("global_config")],
+      program.programId
+    );
+
     [tournamentPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("tournament"), tournamentIdBuf()],
       program.programId
@@ -134,6 +142,26 @@ describe("coordination-game", () => {
     assert.equal(counter.count.toString(), "0");
   });
 
+  it("initializes global config", async () => {
+    // Use a separate treasury keypair for testing
+    const treasury = Keypair.generate();
+    await program.methods
+      .initializeConfig(5000) // 50/50 treasury/prize split
+      .accountsPartial({
+        globalConfig: globalConfigPda,
+        authority: provider.wallet.publicKey,
+        matchmaker: provider.wallet.publicKey, // provider wallet is matchmaker in tests
+        treasury: treasury.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const config = await program.account.globalConfig.fetch(globalConfigPda);
+    assert.equal(config.authority.toString(), provider.wallet.publicKey.toString());
+    assert.equal(config.matchmaker.toString(), provider.wallet.publicKey.toString());
+    assert.equal(config.treasurySplitBps, 5000);
+  });
+
   // ---------------------------------------------------------------------------
   // Tournament
   // ---------------------------------------------------------------------------
@@ -141,7 +169,7 @@ describe("coordination-game", () => {
   it("creates a tournament", async () => {
     const now = Math.floor(Date.now() / 1000);
     await program.methods
-      .createTournament(TOURNAMENT_ID, new BN(now - 60), new BN(now + 3600))
+      .createTournament(TOURNAMENT_ID, new BN(now - 60), new BN(now + 86400))
       .accountsPartial({
         tournament: tournamentPda,
         authority: provider.wallet.publicKey,
@@ -188,6 +216,8 @@ describe("coordination-game", () => {
         playerProfile: p1ProfilePda,
         escrow,
         tournament: tournamentPda,
+        globalConfig: globalConfigPda,
+        matchmaker: matchmaker.publicKey,
         player: player1.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -461,6 +491,8 @@ describe("coordination-game", () => {
         playerProfile: soloProfilePda,
         escrow: soloEscrow,
         tournament: tournamentPda,
+        globalConfig: globalConfigPda,
+        matchmaker: matchmaker.publicKey,
         player: player1.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -519,6 +551,8 @@ describe("coordination-game", () => {
         playerProfile: tp1ProfilePda,
         escrow: p1Escrow,
         tournament: tournamentPda,
+        globalConfig: globalConfigPda,
+        matchmaker: matchmaker.publicKey,
         player: player1.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -609,6 +643,8 @@ describe("coordination-game", () => {
           playerProfile: zeroProfilePda,
           escrow: zeroEscrow,
           tournament: tournamentPda,
+          globalConfig: globalConfigPda,
+          matchmaker: matchmaker.publicKey,
           player: player1.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -643,6 +679,8 @@ describe("coordination-game", () => {
           playerProfile: wrongProfilePda,
           escrow: wrongEscrow,
           tournament: tournamentPda,
+          globalConfig: globalConfigPda,
+          matchmaker: matchmaker.publicKey,
           player: player1.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -772,7 +810,7 @@ describe("coordination-game", () => {
       .createTournament(
         heteroTournamentId,
         new BN(now - 60),
-        new BN(now + 3600)
+        new BN(now + 86400)
       )
       .accountsPartial({
         tournament: heteroTournamentPda,
@@ -832,6 +870,8 @@ describe("coordination-game", () => {
         playerProfile: hetP1ProfilePda,
         escrow: hetP1Escrow,
         tournament: heteroTournamentPda,
+        globalConfig: globalConfigPda,
+        matchmaker: matchmaker.publicKey,
         player: player1.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -959,7 +999,7 @@ describe("coordination-game", () => {
       .createTournament(
         bothWrongTournamentId,
         new BN(now - 60),
-        new BN(now + 3600)
+        new BN(now + 86400)
       )
       .accountsPartial({
         tournament: bothWrongTournamentPda,
@@ -1021,6 +1061,8 @@ describe("coordination-game", () => {
         playerProfile: bwP1ProfilePda,
         escrow: bwP1Escrow,
         tournament: bothWrongTournamentPda,
+        globalConfig: globalConfigPda,
+        matchmaker: matchmaker.publicKey,
         player: player1.publicKey,
         systemProgram: SystemProgram.programId,
       })
@@ -1079,44 +1121,34 @@ describe("coordination-game", () => {
       .signers([player2])
       .rpc();
 
-    // Both wrong → both get stake back, tournament gains nothing
+    // Both wrong → full forfeiture: tournament gains 2× stake
     const bwTournament = await program.account.tournament.fetch(
       bothWrongTournamentPda
     );
+    const twoStakes = STAKE.toNumber() * 2;
     assert.equal(
       bwTournament.prizeLamports.toString(),
-      "0",
-      "tournament should gain nothing when both players guess wrong in hetero match"
+      twoStakes.toString(),
+      "tournament should gain 2× stake when both players guess wrong in hetero match"
     );
 
-    // Both players should roughly break even (each paid stake, each received stake back, minus tx fees)
+    // Both players should lose their full stake
     const p1BalanceAfter = await provider.connection.getBalance(
       player1.publicKey
     );
     const p2BalanceAfter = await provider.connection.getBalance(
       player2.publicKey
     );
-    assert.isBelow(
-      p1BalanceAfter,
-      p1BalanceBefore,
-      "p1 pays tx fees but gets stake refunded"
-    );
-    assert.isBelow(
-      p2BalanceAfter,
-      p2BalanceBefore,
-      "p2 pays tx fees but gets stake refunded"
-    );
-    // Refund means the loss is small (just tx fees), not a full stake loss
     const stakeNum = STAKE.toNumber();
-    assert.isAbove(
+    assert.isBelow(
       p1BalanceAfter,
-      p1BalanceBefore - stakeNum,
-      "p1 should not lose full stake"
+      p1BalanceBefore - stakeNum + 100_000, // allow small margin for rent reclaim
+      "p1 should lose full stake"
     );
-    assert.isAbove(
+    assert.isBelow(
       p2BalanceAfter,
-      p2BalanceBefore - stakeNum,
-      "p2 should not lose full stake"
+      p2BalanceBefore - stakeNum + 100_000,
+      "p2 should lose full stake"
     );
   });
 

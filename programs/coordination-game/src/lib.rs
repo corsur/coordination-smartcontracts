@@ -22,6 +22,17 @@ pub mod coordination_game {
         instructions::initialize::initialize(ctx)
     }
 
+    pub fn initialize_config(
+        ctx: Context<InitializeConfig>,
+        treasury_split_bps: u16,
+    ) -> Result<()> {
+        instructions::initialize_config::initialize_config(ctx, treasury_split_bps)
+    }
+
+    pub fn update_config(ctx: Context<UpdateConfig>, treasury_split_bps: u16) -> Result<()> {
+        instructions::update_config::update_config(ctx, treasury_split_bps)
+    }
+
     pub fn create_tournament(
         ctx: Context<CreateTournament>,
         tournament_id: u64,

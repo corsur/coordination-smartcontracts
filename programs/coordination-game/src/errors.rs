@@ -71,4 +71,12 @@ pub enum CoordinationError {
     SessionPlayerMismatch,
     #[msg("Session signer does not match the session key")]
     SessionSignerMismatch,
+
+    // GlobalConfig
+    #[msg("Caller is not the GlobalConfig authority")]
+    NotAuthority,
+    #[msg("Caller is not the authorized matchmaker")]
+    NotMatchmaker,
+    #[msg("Treasury split basis points out of bounds [2000, 8000]")]
+    InvalidTreasurySplitBps,
 }

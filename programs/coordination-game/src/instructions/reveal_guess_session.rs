@@ -83,8 +83,14 @@ fn finalize_game_session(ctx: Context<RevealGuessSession>) -> Result<()> {
     let (p1_return, p2_return, tournament_gain) =
         compute_returns(game, now, ctx.accounts.tournament.end_time)?;
 
-    let p1_won = p1_return > p2_return;
-    let p2_won = p2_return > p1_return;
+    // Win = guessed correctly. In homogeneous both-correct, BOTH players win.
+    let correct_guess = if game.matchup_type == 0 {
+        crate::state::GUESS_SAME_TEAM
+    } else {
+        crate::state::GUESS_DIFF_TEAM
+    };
+    let p1_won = game.p1_guess == correct_guess;
+    let p2_won = game.p2_guess == correct_guess;
 
     // Effects: apply all state mutations before any lamport transfers
     apply_tournament_update(&mut ctx.accounts.tournament, tournament_gain)?;

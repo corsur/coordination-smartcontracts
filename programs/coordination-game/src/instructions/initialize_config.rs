@@ -1,0 +1,49 @@
+use anchor_lang::prelude::*;
+
+use crate::errors::CoordinationError;
+use crate::state::global_config::{GlobalConfig, MAX_TREASURY_SPLIT_BPS, MIN_TREASURY_SPLIT_BPS};
+
+/// One-time setup: creates the GlobalConfig singleton PDA.
+pub fn initialize_config(ctx: Context<InitializeConfig>, treasury_split_bps: u16) -> Result<()> {
+    // Checks
+    require!(
+        (MIN_TREASURY_SPLIT_BPS..=MAX_TREASURY_SPLIT_BPS).contains(&treasury_split_bps),
+        CoordinationError::InvalidTreasurySplitBps
+    );
+
+    // Effects
+    let config = &mut ctx.accounts.global_config;
+    config.authority = ctx.accounts.authority.key();
+    config.matchmaker = ctx.accounts.matchmaker.key();
+    config.treasury = ctx.accounts.treasury.key();
+    config.treasury_split_bps = treasury_split_bps;
+    config.bump = ctx.bumps.global_config;
+
+    // Postcondition
+    require!(
+        config.treasury_split_bps >= MIN_TREASURY_SPLIT_BPS
+            && config.treasury_split_bps <= MAX_TREASURY_SPLIT_BPS,
+        CoordinationError::InvalidTreasurySplitBps
+    );
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct InitializeConfig<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = GlobalConfig::SPACE,
+        seeds = [b"global_config"],
+        bump,
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    /// CHECK: Matchmaker pubkey, stored in config.
+    pub matchmaker: AccountInfo<'info>,
+    /// CHECK: Treasury pubkey, stored in config.
+    pub treasury: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+}

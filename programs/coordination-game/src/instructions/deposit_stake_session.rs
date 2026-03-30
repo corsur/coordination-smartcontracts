@@ -52,11 +52,16 @@ pub fn deposit_stake_session(ctx: Context<DepositStakeSession>) -> Result<()> {
         CoordinationError::StakeMismatch,
     );
 
-    // Transfer stake from session authority PDA to escrow PDA.
-    // The session PDA was pre-funded by the player at session creation.
-    crate::instructions::utils::transfer_lamports(
-        &ctx.accounts.session_authority.to_account_info(),
-        &ctx.accounts.escrow.to_account_info(),
+    // Transfer stake from the session signer (funded keypair) to escrow PDA.
+    // The session signer was pre-funded by the player in the session setup tx.
+    anchor_lang::system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            anchor_lang::system_program::Transfer {
+                from: ctx.accounts.session_signer.to_account_info(),
+                to: ctx.accounts.escrow.to_account_info(),
+            },
+        ),
         FIXED_STAKE_LAMPORTS,
     )?;
 

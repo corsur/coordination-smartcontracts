@@ -108,7 +108,7 @@ async function getBalance(
   if (account === null) {
     return BigInt(0);
   }
-  return account.lamports;
+  return BigInt(account.lamports);
 }
 
 /**

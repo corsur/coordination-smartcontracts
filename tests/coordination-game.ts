@@ -157,8 +157,14 @@ describe("coordination-game", () => {
       .rpc();
 
     const config = await program.account.globalConfig.fetch(globalConfigPda);
-    assert.equal(config.authority.toString(), provider.wallet.publicKey.toString());
-    assert.equal(config.matchmaker.toString(), provider.wallet.publicKey.toString());
+    assert.equal(
+      config.authority.toString(),
+      provider.wallet.publicKey.toString()
+    );
+    assert.equal(
+      config.matchmaker.toString(),
+      provider.wallet.publicKey.toString()
+    );
     assert.equal(config.treasurySplitBps, 5000);
   });
 

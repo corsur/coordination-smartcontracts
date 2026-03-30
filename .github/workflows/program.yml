@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: '20'
 
-      - run: npm install
+      - run: npm install --legacy-peer-deps
 
       - run: cargo fmt --check
 

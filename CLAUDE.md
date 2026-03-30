@@ -602,7 +602,7 @@ These types are used by the shillbot on-chain program for attestation validation
 
 ## Program: coordination (Detailed Specification)
 
-The full coordination game specification follows. This is the existing program, documented here for completeness.
+The full coordination game specification follows. The canonical game design document is at `coordination/coordination-game/CLAUDE.md` — read it for game theory rationale, player psychology, and economic model. This section covers the on-chain implementation.
 
 ### Account Structures
 
@@ -615,6 +615,19 @@ count:            u64      incremented on each create_game; used as game_id
 bump:             u8
 ```
 
+#### `GlobalConfig`
+Singleton PDA. Seeds: `["global_config"]`
+
+```
+authority:            Pubkey    governance authority (EOA for v1, Squads multisig later)
+matchmaker:           Pubkey    authorized matchmaker that gates create_game
+treasury:             Pubkey    DAO treasury address for losing stake split
+treasury_split_bps:   u16       portion of losing stakes sent to treasury (basis points, default 5000 = 50%)
+bump:                 u8
+```
+
+Bounds: `treasury_split_bps` must be in [2000, 8000] (20-80% treasury share).
+
 #### `Tournament`
 PDA seeds: `["tournament", tournament_id: u64 as 8-byte LE]`
 
@@ -623,11 +636,11 @@ tournament_id:            u64
 authority:                Pubkey    informational only — no admin power post-creation
 start_time:               i64       Unix timestamp
 end_time:                 i64       Unix timestamp
-prize_lamports:           u64       accumulates losing stakes during the tournament
-game_count:               u64       total resolved games
+prize_lamports:           u64       accumulates tournament share of losing stakes
+game_count:               u64       total resolved games (ALL resolved games, not just those with pool gain)
 finalized:                bool      set by finalize_tournament after end_time
 prize_snapshot:           u64       prize_lamports frozen at finalization
-total_score_snapshot:     u64       sum of all player scores frozen at finalization
+merkle_root:              [u8; 32]  root of merkle tree of (player, entitlement) pairs, set at finalization
 bump:                     u8
 ```
 
@@ -636,17 +649,19 @@ The Tournament PDA is both data store and lamport vault for the prize pool.
 #### `PlayerProfile`
 PDA seeds: `["player", tournament_id: u64 as 8-byte LE, wallet: Pubkey]`
 
-One profile per (wallet, tournament). Created at `create_game` or `join_game` via `init_if_needed`; player pays for creation.
+One profile per (wallet, tournament). Created at `join_game` via `init_if_needed`; player pays for creation.
 
 ```
 wallet:           Pubkey
 tournament_id:    u64
-wins:             u64      games where player received the +0.9 return
+wins:             u64      games where player guessed correctly (including homogeneous both-correct for BOTH players)
 total_games:      u64      resolved games in this tournament
 score:            u64      wins * wins / total_games (updated after each resolution)
 claimed:          bool     set to true after claim_reward; prevents double-claim
 bump:             u8
 ```
+
+**Win definition:** A player earns a win when they guess correctly. In homogeneous both-correct, BOTH players earn a win. In heterogeneous matches, the player who takes the pot earns a win.
 
 #### `Game`
 PDA seeds: `["game", game_id: u64 as 8-byte LE]`
@@ -680,6 +695,7 @@ The Game PDA holds both players' staked lamports in its own balance.
          ──(create_game)──► Pending
 Pending ──(join_game)──► Active
 Active ──(commit_guess: first)──► Committing
+Active ──(resolve_timeout: neither commits)──► Resolved (both forfeit)
 Committing ──(commit_guess: second)──► Revealing
 Committing ──(resolve_timeout)──► Resolved
 Revealing ──(reveal_guess: both revealed)──► Resolved
@@ -692,45 +708,63 @@ Resolved ──(close_game)──► [account closed]
 #### `initialize`
 Creates the global `GameCounter` PDA. One-time setup.
 
+#### `initialize_config`
+Signers: `authority`. Creates the `GlobalConfig` singleton PDA with authority, matchmaker, treasury, and treasury_split_bps. Validates treasury_split_bps within [2000, 8000].
+
+#### `update_config`
+Signers: `authority` (must match `global_config.authority`). Updates treasury, treasury_split_bps, matchmaker, or authority. Validates bounds.
+
 #### `create_tournament`
 Signers: any wallet. Validate `end_time > start_time` and `end_time > Clock::now()`. Initialize Tournament PDA.
 
 #### `create_game`
-Signers: player (becomes player one). Assert within tournament window. Assign game_id from counter. Init Game PDA. Transfer stake from player to Game PDA.
+Signers: `matchmaker` (must match `global_config.matchmaker`). The matchmaker (game-api) is the sole caller — players never call this directly and never see `matchup_type`. Assert within tournament window. Assert `now + COMMIT_TIMEOUT_SLOTS + REVEAL_TIMEOUT_SLOTS < tournament.end_time` (end-of-tournament cutoff). Assign game_id from counter. Init Game PDA.
 
 #### `join_game`
-Signers: player (becomes player two). Assert `state == Pending`, player != player_one, within tournament window. Transfer stake.
+Signers: player (becomes player one or two). Assert `state == Pending`, player != player_one, within tournament window. Transfer stake from player's escrow to Game PDA.
 
 #### `commit_guess`
 Signers: participant. Assert Active or Committing. Store commitment hash. Record commit slot and first_committer.
 
 #### `reveal_guess`
-Signers: participant. Assert Revealing. Verify `SHA-256(R) == commitment`. Extract `guess = R[31] & 1`. If both revealed, resolve.
+Signers: participant. Assert Revealing. Verify `SHA-256(R) == commitment`. Extract `guess = R[31] & 1`. If both revealed, resolve game. Split `tournament_gain` between treasury (treasury_split_bps share) and tournament prize pool (remainder). Increment `game_count` for ALL resolved games. Award wins based on correct guesses (not return amounts).
 
 #### `resolve_timeout`
-Permissionless. Assert Committing or Revealing and timeout elapsed. Slash non-participant.
+Permissionless. Handles three states:
+- **Active (neither committed):** Both forfeit. Stakes go to pool/treasury split.
+- **Committing (one committed):** Committer wins the full pot (2S). Non-committer is slashed.
+- **Revealing (one revealed):** Revealer receives the full pot (2S). Non-revealer is slashed. (This prevents timeout griefing — a loser refusing to reveal at zero extra cost to themselves.)
 
 #### `close_game`
 Permissionless. Assert Resolved. Close account, return rent to caller.
 
 #### `finalize_tournament`
-Permissionless. Assert past end_time and not finalized. Snapshot scores.
+Signers: `authority` (must match `global_config.authority`). Authority-gated to prevent selective inclusion attacks. Assert past end_time and not finalized. Authority posts the 32-byte merkle root of (player, entitlement) pairs computed off-chain. Sets `finalized = true` and `prize_snapshot`.
 
 #### `claim_reward`
-Signers: player. Assert finalized, not claimed, minimum 5 games. Compute proportional entitlement.
+Signers: player. Assert finalized, not claimed, minimum 5 games. Player submits merkle proof. On-chain: verify proof against stored `merkle_root` using `keccak::hashv` with domain separation (0x00 prefix for leaves, 0x01 for internal nodes, sorted children). Transfer entitlement from tournament PDA. Set `claimed = true`.
 
 ### Payoff Logic
 
-Same team (matchup_type = 0): both correct = both keep stake. Any wrong = both lose to tournament.
+**Same team (matchup_type = 0):**
+- Both correct → both keep stake (S, S). Tournament gains 0. Both players earn a win.
+- One correct, one wrong → correct gets 0.5S, wrong gets 0. Tournament gains 1.5S. Correct player earns a win.
+- Both wrong → both forfeit. Tournament gains 2S.
 
-Different teams (matchup_type = 1): one correct = winner takes all. Both correct = first committer wins. Both wrong = full refund.
+**Different teams (matchup_type = 1):**
+- One correct → winner takes full pot (2S, 0). Tournament gains 0. Winner earns a win.
+- Both correct → first committer takes full pot (2S, 0). Tournament gains 0. Winner earns a win.
+- Both wrong → both forfeit. Tournament gains 2S. (This prevents "always guess Same" collusion.)
 
-All arithmetic uses `checked_mul`/`checked_div`. Lamport conservation asserted after each resolution.
+**Tournament gains are split:** treasury gets `tournament_gain * treasury_split_bps / 10_000`, prize pool gets the remainder. Split happens in reveal_guess and resolve_timeout.
+
+All arithmetic uses `checked_mul`/`checked_div`. Lamport conservation asserted: `p1_return + p2_return + tournament_gain == 2 * stake_lamports`.
 
 ### Timeouts
 
 | Stage | Timeout |
 |---|---|
+| Active (neither commits) | 7,200 slots (~1 hour) |
 | Committing | 7,200 slots (~1 hour) |
 | Revealing | 14,400 slots (~2 hours) |
 
@@ -742,14 +776,16 @@ AlreadyRevealed, AlreadyClaimed, CannotJoinOwnGame, StakeMismatch,
 CommitmentMismatch, TimeoutNotElapsed, InvalidTournamentTimes,
 TournamentNotEnded, TournamentNotFinalized, EmptyPrizePool,
 OutsideTournamentWindow, ProfileTournamentMismatch, BelowMinimumGames,
-ArithmeticOverflow, TooManyAccounts
+ArithmeticOverflow, TooManyAccounts, NotAuthority, NotMatchmaker,
+InvalidTreasurySplitBps, InvalidMerkleProof
 ```
 
 ### Events
 
 ```rust
 TournamentCreated, GameCreated, GameStarted, GuessCommitted, GuessRevealed,
-GameResolved, TimeoutSlash, TournamentFinalized, RewardClaimed
+GameResolved { ..., treasury_gain: u64 }, TimeoutSlash, TournamentFinalized,
+RewardClaimed, ConfigInitialized, ConfigUpdated
 ```
 
 ---
@@ -775,7 +811,5 @@ GameResolved, TimeoutSlash, TournamentFinalized, RewardClaimed
 
 ## Open Questions
 
-- **`finalize_tournament` scaling** — passing all PlayerProfile accounts as remaining accounts works for small tournaments but hits transaction size limits at scale. Redesign needed before production.
-- **Coordination game DAO treasury integration** — the exact mechanism for routing losing stake to the Squads treasury PDA needs implementation. The tournament currently holds its own prize pool; migration to Squads treasury is a future upgrade.
 - **Switchboard Function implementation** — the custom Switchboard Function that calls YouTube Data API v3, computes composite score, and posts attestation needs to be specified and built. This is off-chain code that runs in Switchboard's TEE environment.
 - **`emergency_return` does not decrement AgentState.claimed_count** — when the multisig emergency-returns Claimed tasks, the affected agents' `AgentState.claimed_count` is not decremented. This is conservative (prevents over-claiming) but means agents may temporarily be unable to claim their full quota. The count self-corrects as other tasks are submitted or expired.

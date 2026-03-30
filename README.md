@@ -86,12 +86,15 @@ cargo clippy -- -D warnings
 
 ## Coordination Game
 
+See the full game design spec at [`coordination/coordination-game/CLAUDE.md`](../coordination-game/CLAUDE.md) and the smart contract implementation spec in [`CLAUDE.md`](./CLAUDE.md).
+
 ### State Machine
 
 ```
-         --(create_game)--> Pending
-Pending --(join_game)--> Active
+         --(create_game)--> Pending       (matchmaker creates)
+Pending --(join_game)--> Active           (both players join)
 Active --(commit_guess: 1st)--> Committing
+Active --(resolve_timeout)--> Resolved    (neither committed)
 Committing --(commit_guess: 2nd)--> Revealing
 Committing --(resolve_timeout)--> Resolved
 Revealing --(reveal_guess: both)--> Resolved
@@ -99,45 +102,22 @@ Revealing --(resolve_timeout)--> Resolved
 Resolved --(close_game)--> [account closed]
 ```
 
-### Instructions
-
-| Instruction | Signer | Description |
-|---|---|---|
-| `initialize` | any | One-time setup: creates `GameCounter` PDA |
-| `create_tournament` | any | Create a time-bounded tournament with prize pool |
-| `create_game` | player 1 | Create a game PDA and lock stake |
-| `join_game` | player 2 | Join an existing game and lock stake |
-| `deposit_stake` | player | Deposit stake into tournament escrow |
-| `commit_guess` | player | Submit SHA-256(R) commitment |
-| `reveal_guess` | player | Submit preimage R; resolves if both revealed |
-| `resolve_timeout` | anyone | Slash non-participant after timeout |
-| `close_game` | anyone | Reclaim rent from resolved game |
-| `finalize_tournament` | anyone | Snapshot scores after tournament ends |
-| `claim_reward` | player | Claim proportional prize from pool |
-| `create_player_session` | player | Authorize an ephemeral session keypair |
-| `close_player_session` | player | Revoke a session keypair |
-
-### Commit-Reveal Scheme
-
-Guesses are submitted in two phases to prevent front-running:
-
-1. **Commit:** Generate random 32-byte preimage `R`. Encode guess in last bit: `R[31] = (R[31] & 0xFE) | guess`. Submit `commitment = SHA-256(R)`.
-2. **Reveal:** Submit `R`. Program verifies `SHA-256(R) == commitment` and extracts `guess = R[31] & 1`.
-
 ### Payoff Matrix
 
-| Matchup | Outcome | P1 Return | P2 Return |
-|---|---|---|---|
-| Same team | Both correct | -0.1 SOL | -0.1 SOL |
-| Same team | Any wrong | -1 SOL | -1 SOL |
-| Different teams | Both correct | First committer wins (+0.9, -1) |  |
-| Different teams | Any wrong | First inaccurate loses (-1, +0.9) |  |
+| Matchup | Outcome | P1 Return | P2 Return | To Pool |
+|---|---|---|---|---|
+| Same team | Both correct | S | S | 0 |
+| Same team | One correct, one wrong | 0.5S (correct) | 0 (wrong) | 1.5S |
+| Same team | Both wrong | 0 | 0 | 2S |
+| Different teams | One correct | 2S (winner) | 0 | 0 |
+| Different teams | Both correct | 2S (first committer) | 0 | 0 |
+| Different teams | Both wrong | 0 | 0 | 2S |
 
-Losing stake accumulates in the Tournament PDA (DAO treasury).
+Pool gains are split between DAO treasury and tournament prize pool via `GlobalConfig.treasury_split_bps` (default 50/50). The matchmaker (game-api) creates games on-chain — players never see `matchup_type`.
 
 ### Session Keys
 
-Players can authorize ephemeral session keypairs via `create_player_session` to avoid repeated wallet popups during gameplay. The session keypair signs game transactions (commit, reveal, deposit) on behalf of the player. Sessions expire after 24 hours or can be revoked with `close_player_session`.
+Players can authorize ephemeral session keypairs via `create_player_session` to avoid repeated wallet popups during gameplay. Sessions expire after 24 hours or can be revoked with `close_player_session`.
 
 ## Shillbot Task Marketplace
 
@@ -189,8 +169,6 @@ Anyone can challenge a verified task during the 24-hour challenge window by post
 
 - **Challenger wins:** escrow returned to client, bond returned to challenger
 - **Agent wins:** payment released, bond slashed (50/50 to agent and treasury)
-
-Clients get 20% of campaign tasks as free challenges (no bond required).
 
 ## Security Model
 

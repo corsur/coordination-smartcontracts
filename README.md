@@ -191,7 +191,7 @@ The CI pipeline asserts the upgrade authority matches the expected Squads addres
 
 Full code standards are documented in [CLAUDE.md](./CLAUDE.md). Key rules:
 
-- Functions ≤60 lines; thin instruction handlers that delegate to pure functions
+- Functions ≤100 lines; thin instruction handlers that delegate to pure functions
 - Minimum 2 assertions per function (pre/postconditions)
 - No recursion (Solana BPF 4KB stack limit)
 - All loops have fixed, verifiable upper bounds

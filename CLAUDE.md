@@ -43,7 +43,7 @@ Never trust `remaining_accounts.len()` — an attacker chooses how many accounts
 
 **Rule 3 — No unbounded resource consumption.** On-chain, collection sizes must be statically bounded. Never use `Vec::with_capacity(n)` where `n` comes from instruction input. Every PDA account has a fixed, known size. If a collection grows with usage (e.g., challenge history), use separate PDA accounts per entry, not a growing Vec in one account.
 
-**Rule 4 — Instruction handlers ≤60 lines.** Handlers validate, delegate to a pure function, and emit an event:
+**Rule 4 — Instruction handlers ≤100 lines.** Handlers validate, delegate to a pure function, and emit an event:
 ```rust
 pub fn reveal_guess(ctx: Context<RevealGuess>, r: [u8; 32]) -> Result<()> {
     let game = &mut ctx.accounts.game;

@@ -191,7 +191,7 @@ jobs:
       - name: Write deploy keypair
         run: |
           mkdir -p ~/.config/solana
-          echo '${{ secrets.MAINNET_DEPLOY_KEYPAIR }}' > ~/.config/solana/id.json
+          echo '${{ secrets.SOLANA_DEPLOY_KEYPAIR }}' > ~/.config/solana/id.json
 
       - name: Write program keypairs
         run: |

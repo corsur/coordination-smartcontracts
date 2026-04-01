@@ -1844,7 +1844,19 @@ describe("shillbot", () => {
       const newThreshold = new BN(300_000);
 
       await program.methods
-        .updateParams(newFee, newThreshold, new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0)
+        .updateParams(
+          newFee,
+          newThreshold,
+          new BN(86_400),
+          new BN(1_209_600),
+          new BN(604_800),
+          new BN(86_400),
+          5,
+          2,
+          5_000,
+          false,
+          0
+        )
         .accountsPartial({
           globalState: globalPda,
           authority: authority.publicKey,
@@ -1857,7 +1869,19 @@ describe("shillbot", () => {
 
       // Restore original values for subsequent tests
       await program.methods
-        .updateParams(PROTOCOL_FEE_BPS, QUALITY_THRESHOLD, new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0)
+        .updateParams(
+          PROTOCOL_FEE_BPS,
+          QUALITY_THRESHOLD,
+          new BN(86_400),
+          new BN(1_209_600),
+          new BN(604_800),
+          new BN(86_400),
+          5,
+          2,
+          5_000,
+          false,
+          0
+        )
         .accountsPartial({
           globalState: globalPda,
           authority: authority.publicKey,
@@ -1878,7 +1902,19 @@ describe("shillbot", () => {
 
       try {
         await program.methods
-          .updateParams(500, new BN(300_000), new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0)
+          .updateParams(
+            500,
+            new BN(300_000),
+            new BN(86_400),
+            new BN(1_209_600),
+            new BN(604_800),
+            new BN(86_400),
+            5,
+            2,
+            5_000,
+            false,
+            0
+          )
           .accountsPartial({
             globalState: globalPda,
             authority: impostor.publicKey,
@@ -1894,7 +1930,19 @@ describe("shillbot", () => {
     it("rejects fee below minimum (100 bps)", async () => {
       try {
         await program.methods
-          .updateParams(50, QUALITY_THRESHOLD, new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0) // 50 bps < 100 bps minimum
+          .updateParams(
+            50,
+            QUALITY_THRESHOLD,
+            new BN(86_400),
+            new BN(1_209_600),
+            new BN(604_800),
+            new BN(86_400),
+            5,
+            2,
+            5_000,
+            false,
+            0
+          ) // 50 bps < 100 bps minimum
           .accountsPartial({
             globalState: globalPda,
             authority: authority.publicKey,
@@ -1909,7 +1957,19 @@ describe("shillbot", () => {
     it("rejects fee above maximum (2500 bps)", async () => {
       try {
         await program.methods
-          .updateParams(3000, QUALITY_THRESHOLD, new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0) // 3000 bps > 2500 bps maximum
+          .updateParams(
+            3000,
+            QUALITY_THRESHOLD,
+            new BN(86_400),
+            new BN(1_209_600),
+            new BN(604_800),
+            new BN(86_400),
+            5,
+            2,
+            5_000,
+            false,
+            0
+          ) // 3000 bps > 2500 bps maximum
           .accountsPartial({
             globalState: globalPda,
             authority: authority.publicKey,
@@ -1924,7 +1984,19 @@ describe("shillbot", () => {
     it("rejects threshold above MAX_SCORE", async () => {
       try {
         await program.methods
-          .updateParams(PROTOCOL_FEE_BPS, new BN(MAX_SCORE + 1), new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0)
+          .updateParams(
+            PROTOCOL_FEE_BPS,
+            new BN(MAX_SCORE + 1),
+            new BN(86_400),
+            new BN(1_209_600),
+            new BN(604_800),
+            new BN(86_400),
+            5,
+            2,
+            5_000,
+            false,
+            0
+          )
           .accountsPartial({
             globalState: globalPda,
             authority: authority.publicKey,

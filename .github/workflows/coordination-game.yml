@@ -66,8 +66,8 @@ jobs:
 
       - name: Run coordination-game tests
         run: |
-          solana-test-validator --reset &
-          sleep 5
+          anchor localnet --skip-lint &
+          sleep 10
           solana airdrop 100 --url localhost --keypair /home/runner/.config/solana/id.json
           npx ts-mocha -p ./tsconfig.json -t 1000000 "tests/coordination-game.ts"
         env:

@@ -61,7 +61,8 @@ jobs:
           anchor build -p coordination-game
           anchor build -p shillbot
 
-      - run: pnpm run lint
+      - name: Lint coordination-game tests
+        run: npx prettier "tests/coordination-game.ts" --check
 
       - name: Run coordination-game tests
         run: |

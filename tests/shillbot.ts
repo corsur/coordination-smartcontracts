@@ -202,7 +202,8 @@ describe("shillbot", () => {
           content as any,
           deadline,
           submitMargin,
-          claimBuffer
+          claimBuffer,
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -270,7 +271,8 @@ describe("shillbot", () => {
             content as any,
             new BN(now + 86_400),
             new BN(3600),
-            new BN(14_400)
+            new BN(14_400),
+            0
           )
           .accountsPartial({
             globalState: globalPda,
@@ -302,7 +304,8 @@ describe("shillbot", () => {
             content as any,
             new BN(1), // Unix timestamp 1 = far in the past
             new BN(3600),
-            new BN(14_400)
+            new BN(14_400),
+            0
           )
           .accountsPartial({
             globalState: globalPda,
@@ -343,7 +346,8 @@ describe("shillbot", () => {
           contentHash("claim test task") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400) // claim_buffer = 4 hours
+          new BN(14_400), // claim_buffer = 4 hours
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -434,7 +438,8 @@ describe("shillbot", () => {
           contentHash("submit test task") as any,
           new BN(now + 86_400 * 30),
           new BN(3600), // submit_margin = 1 hour
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -478,7 +483,7 @@ describe("shillbot", () => {
       // Verify video_id_hash is SHA-256 of the video ID
       const expectedHash = createHash("sha256").update(videoId).digest();
       assert.deepEqual(
-        Array.from(task.videoIdHash as any),
+        Array.from(task.contentIdHash as any),
         Array.from(expectedHash)
       );
 
@@ -509,7 +514,8 @@ describe("shillbot", () => {
           contentHash("non-agent submit test") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -594,7 +600,8 @@ describe("shillbot", () => {
           contentHash("verify test task") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -735,7 +742,8 @@ describe("shillbot", () => {
           contentHash("finalize reject test") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -793,7 +801,8 @@ describe("shillbot", () => {
           contentHash("challenge reject test") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -852,7 +861,8 @@ describe("shillbot", () => {
           contentHash("resolve reject test") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -926,7 +936,8 @@ describe("shillbot", () => {
           contentHash("expire reject test") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -976,7 +987,8 @@ describe("shillbot", () => {
           contentHash("short deadline task") as any,
           tightDeadline,
           new BN(0), // no submit margin
-          new BN(0) // no claim buffer
+          new BN(0), // no claim buffer
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -1072,7 +1084,8 @@ describe("shillbot", () => {
             contentHash(`concurrent task ${i}`) as any,
             new BN(now + 86_400 * 30),
             new BN(3600),
-            new BN(14_400)
+            new BN(14_400),
+            0
           )
           .accountsPartial({
             globalState: globalPda,
@@ -1124,7 +1137,8 @@ describe("shillbot", () => {
           contentHash("concurrent task 4") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -1176,7 +1190,8 @@ describe("shillbot", () => {
           contentHash("concurrent task 5 overflow") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -1231,7 +1246,7 @@ describe("shillbot", () => {
 
       // 0x03 = both claim_task and submit_work permissions
       await program.methods
-        .createSession(0x03)
+        .createSession(0x03, new BN(86_400))
         .accountsPartial({
           sessionDelegate: sessionDelegatePda,
           agent: agent.publicKey,
@@ -1266,7 +1281,7 @@ describe("shillbot", () => {
 
       try {
         await program.methods
-          .createSession(0x00)
+          .createSession(0x00, new BN(86_400))
           .accountsPartial({
             sessionDelegate: badSessionPda,
             agent: agent.publicKey,
@@ -1291,7 +1306,7 @@ describe("shillbot", () => {
 
       try {
         await program.methods
-          .createSession(0x04)
+          .createSession(0x04, new BN(86_400))
           .accountsPartial({
             sessionDelegate: badSessionPda,
             agent: agent.publicKey,
@@ -1339,7 +1354,7 @@ describe("shillbot", () => {
       );
 
       await program.methods
-        .createSession(0x01)
+        .createSession(0x01, new BN(86_400))
         .accountsPartial({
           sessionDelegate: newSessionPda,
           agent: agent.publicKey,
@@ -1396,7 +1411,7 @@ describe("shillbot", () => {
       );
 
       await program.methods
-        .createSession(0x01)
+        .createSession(0x01, new BN(86_400))
         .accountsPartial({
           sessionDelegate: claimSessionPda,
           agent: agent.publicKey,
@@ -1431,7 +1446,7 @@ describe("shillbot", () => {
       );
 
       await program.methods
-        .createSession(0x02)
+        .createSession(0x02, new BN(86_400))
         .accountsPartial({
           sessionDelegate: submitSessionPda,
           agent: agent.publicKey,
@@ -1480,7 +1495,8 @@ describe("shillbot", () => {
           contentHash("tight deadline task") as any,
           new BN(now + 100),
           new BN(0),
-          new BN(14_400) // 4 hour claim buffer, but deadline is 100s away
+          new BN(14_400), // 4 hour claim buffer, but deadline is 100s away
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -1536,7 +1552,8 @@ describe("shillbot", () => {
             contentHash(`emergency open task ${i}`) as any,
             new BN(now + 86_400 * 30),
             new BN(3600),
-            new BN(14_400)
+            new BN(14_400),
+            0
           )
           .accountsPartial({
             globalState: globalPda,
@@ -1624,7 +1641,8 @@ describe("shillbot", () => {
           contentHash("emergency claimed task") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -1711,7 +1729,8 @@ describe("shillbot", () => {
           contentHash("emergency auth test") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -1758,7 +1777,8 @@ describe("shillbot", () => {
           contentHash("emergency submitted test") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,
@@ -1824,7 +1844,7 @@ describe("shillbot", () => {
       const newThreshold = new BN(300_000);
 
       await program.methods
-        .updateParams(newFee, newThreshold)
+        .updateParams(newFee, newThreshold, new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0)
         .accountsPartial({
           globalState: globalPda,
           authority: authority.publicKey,
@@ -1837,7 +1857,7 @@ describe("shillbot", () => {
 
       // Restore original values for subsequent tests
       await program.methods
-        .updateParams(PROTOCOL_FEE_BPS, QUALITY_THRESHOLD)
+        .updateParams(PROTOCOL_FEE_BPS, QUALITY_THRESHOLD, new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0)
         .accountsPartial({
           globalState: globalPda,
           authority: authority.publicKey,
@@ -1858,7 +1878,7 @@ describe("shillbot", () => {
 
       try {
         await program.methods
-          .updateParams(500, new BN(300_000))
+          .updateParams(500, new BN(300_000), new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0)
           .accountsPartial({
             globalState: globalPda,
             authority: impostor.publicKey,
@@ -1874,7 +1894,7 @@ describe("shillbot", () => {
     it("rejects fee below minimum (100 bps)", async () => {
       try {
         await program.methods
-          .updateParams(50, QUALITY_THRESHOLD) // 50 bps < 100 bps minimum
+          .updateParams(50, QUALITY_THRESHOLD, new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0) // 50 bps < 100 bps minimum
           .accountsPartial({
             globalState: globalPda,
             authority: authority.publicKey,
@@ -1889,7 +1909,7 @@ describe("shillbot", () => {
     it("rejects fee above maximum (2500 bps)", async () => {
       try {
         await program.methods
-          .updateParams(3000, QUALITY_THRESHOLD) // 3000 bps > 2500 bps maximum
+          .updateParams(3000, QUALITY_THRESHOLD, new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0) // 3000 bps > 2500 bps maximum
           .accountsPartial({
             globalState: globalPda,
             authority: authority.publicKey,
@@ -1904,7 +1924,7 @@ describe("shillbot", () => {
     it("rejects threshold above MAX_SCORE", async () => {
       try {
         await program.methods
-          .updateParams(PROTOCOL_FEE_BPS, new BN(MAX_SCORE + 1))
+          .updateParams(PROTOCOL_FEE_BPS, new BN(MAX_SCORE + 1), new BN(86_400), new BN(1_209_600), new BN(604_800), new BN(86_400), 5, 2, 5_000, false, 0)
           .accountsPartial({
             globalState: globalPda,
             authority: authority.publicKey,
@@ -1938,7 +1958,8 @@ describe("shillbot", () => {
           contentHash("submit on open task") as any,
           new BN(now + 86_400 * 30),
           new BN(3600),
-          new BN(14_400)
+          new BN(14_400),
+          0
         )
         .accountsPartial({
           globalState: globalPda,

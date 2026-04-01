@@ -202,7 +202,8 @@ async function createTask(
       content as any,
       deadline,
       new BN(3600), // submit_margin = 1 hour
-      new BN(14_400) // claim_buffer = 4 hours
+      new BN(14_400), // claim_buffer = 4 hours
+      0 // platform = YouTube
     )
     .accountsPartial({
       globalState: globalPda,

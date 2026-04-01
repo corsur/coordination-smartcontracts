@@ -1,10 +1,12 @@
 {
   "name": "@corsur/coordination-game-sdk",
-  "version": "0.0.0-78d4c88-5",
+  "version": "0.0.0-ed2f027-2",
   "description": "Anchor-generated TypeScript types for the Coordination Game program",
-  "main": "./coordination_game.ts",
-  "types": "./coordination_game.ts",
+  "main": "./coordination_game.js",
+  "types": "./coordination_game.d.ts",
   "files": [
+    "coordination_game.js",
+    "coordination_game.d.ts",
     "coordination_game.ts"
   ],
   "publishConfig": {

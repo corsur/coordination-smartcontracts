@@ -79,6 +79,7 @@ pub mod shillbot {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_task(
         ctx: Context<CreateTask>,
         escrow_lamports: u64,
@@ -87,6 +88,9 @@ pub mod shillbot {
         submit_margin: i64,
         claim_buffer: i64,
         platform: u8,
+        attestation_delay_override: u32,
+        challenge_window_override: u32,
+        verification_timeout_override: u32,
     ) -> Result<()> {
         instructions::create_task::create_task(
             ctx,
@@ -96,6 +100,9 @@ pub mod shillbot {
             submit_margin,
             claim_buffer,
             platform,
+            attestation_delay_override,
+            challenge_window_override,
+            verification_timeout_override,
         )
     }
 
@@ -111,8 +118,12 @@ pub mod shillbot {
         instructions::submit_work::submit_work(ctx, content_id)
     }
 
-    pub fn verify_task(ctx: Context<VerifyTask>, composite_score: u64) -> Result<()> {
-        instructions::verify_task::verify_task(ctx, composite_score)
+    pub fn verify_task(
+        ctx: Context<VerifyTask>,
+        composite_score: u64,
+        verification_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::verify_task::verify_task(ctx, composite_score, verification_hash)
     }
 
     pub fn finalize_task(ctx: Context<FinalizeTask>) -> Result<()> {
@@ -153,6 +164,18 @@ pub mod shillbot {
 
     pub fn submit_work_session(ctx: Context<SubmitWorkSession>, content_id: Vec<u8>) -> Result<()> {
         instructions::submit_work_session::submit_work_session(ctx, content_id)
+    }
+
+    pub fn register_identity(
+        ctx: Context<RegisterIdentity>,
+        platform: u8,
+        identity_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::register_identity::register_identity(ctx, platform, identity_hash)
+    }
+
+    pub fn revoke_identity(ctx: Context<RevokeIdentity>) -> Result<()> {
+        instructions::revoke_identity::revoke_identity(ctx)
     }
 
     pub fn transfer_authority(

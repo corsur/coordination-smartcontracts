@@ -29,6 +29,7 @@ pub struct TaskVerified {
     pub composite_score: u64,
     pub payment_amount: u64,
     pub fee_amount: u64,
+    pub verification_hash: [u8; 32],
 }
 
 #[event]
@@ -106,4 +107,17 @@ pub struct TreasuryUpdated {
 pub struct OracleAuthorityUpdated {
     pub old_oracle_authority: Pubkey,
     pub new_oracle_authority: Pubkey,
+}
+
+#[event]
+pub struct IdentityRegistered {
+    pub agent: Pubkey,
+    pub platform: u8,
+    pub identity_hash: [u8; 32],
+}
+
+#[event]
+pub struct IdentityRevoked {
+    pub agent: Pubkey,
+    pub platform: u8,
 }

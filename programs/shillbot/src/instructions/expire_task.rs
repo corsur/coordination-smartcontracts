@@ -25,9 +25,14 @@ pub fn expire_task(ctx: Context<ExpireTask>) -> Result<()> {
             );
         }
         TaskState::Submitted => {
+            let verification_timeout = if task.verification_timeout_override > 0 {
+                i64::from(task.verification_timeout_override)
+            } else {
+                global.verification_timeout_seconds
+            };
             let verification_deadline = task
                 .submitted_at
-                .checked_add(global.verification_timeout_seconds)
+                .checked_add(verification_timeout)
                 .ok_or(ShillbotError::ArithmeticOverflow)?;
             require!(
                 clock.unix_timestamp > verification_deadline,

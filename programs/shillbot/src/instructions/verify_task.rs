@@ -10,7 +10,11 @@ use crate::state::{GlobalState, Task, TaskState};
 /// The authority account represents the Switchboard feed attestation signer.
 /// Immutable invariant: the feed PDA must be derived from fixed seeds and owned
 /// by the Switchboard program. For devnet, the oracle_authority in GlobalState signs directly.
-pub fn verify_task(ctx: Context<VerifyTask>, composite_score: u64) -> Result<()> {
+pub fn verify_task(
+    ctx: Context<VerifyTask>,
+    composite_score: u64,
+    verification_hash: [u8; 32],
+) -> Result<()> {
     let clock = Clock::get()?;
     let task = &ctx.accounts.task;
     let global = &ctx.accounts.global_state;
@@ -33,11 +37,22 @@ pub fn verify_task(ctx: Context<VerifyTask>, composite_score: u64) -> Result<()>
         ShillbotError::ScoreOutOfBounds
     );
 
+    // Checks: verification hash must not be zero
+    require!(
+        verification_hash != [0u8; 32],
+        ShillbotError::InvalidVerificationHash
+    );
+
     // Checks: staleness — attestation within staleness_window of submitted_at + attestation_delay
-    // (the oracle should attest around T+attestation_delay, but we allow a window)
+    // Use per-task override if nonzero, else global default.
+    let attestation_delay = if task.attestation_delay_override > 0 {
+        i64::from(task.attestation_delay_override)
+    } else {
+        global.attestation_delay_seconds
+    };
     let expected_attestation_time = task
         .submitted_at
-        .checked_add(global.attestation_delay_seconds)
+        .checked_add(attestation_delay)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
     let earliest = expected_attestation_time
         .checked_sub(global.staleness_window_seconds)
@@ -65,9 +80,15 @@ pub fn verify_task(ctx: Context<VerifyTask>, composite_score: u64) -> Result<()>
     task.payment_amount = payment_amount;
     task.fee_amount = fee_amount;
     task.verified_at = clock.unix_timestamp;
+    task.verification_hash = verification_hash;
+    let challenge_window = if task.challenge_window_override > 0 {
+        i64::from(task.challenge_window_override)
+    } else {
+        global.challenge_window_seconds
+    };
     task.challenge_deadline = clock
         .unix_timestamp
-        .checked_add(global.challenge_window_seconds)
+        .checked_add(challenge_window)
         .ok_or(ShillbotError::ArithmeticOverflow)?;
     task.state = TaskState::Verified;
 
@@ -77,6 +98,7 @@ pub fn verify_task(ctx: Context<VerifyTask>, composite_score: u64) -> Result<()>
         composite_score,
         payment_amount,
         fee_amount,
+        verification_hash,
     });
 
     Ok(())

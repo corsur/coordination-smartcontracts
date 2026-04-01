@@ -85,4 +85,13 @@ pub enum ShillbotError {
 
     #[msg("Session delegation has expired")]
     SessionExpired,
+
+    #[msg("Timing override value outside allowed bounds")]
+    TimingOverrideOutOfBounds,
+
+    #[msg("Identity hash must not be zero")]
+    InvalidIdentity,
+
+    #[msg("Verification hash must not be zero")]
+    InvalidVerificationHash,
 }

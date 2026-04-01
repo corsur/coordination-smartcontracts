@@ -65,8 +65,16 @@ pub struct Task {
     pub verified_at: i64,
     /// 0 until challenge window starts.
     pub challenge_deadline: i64,
+    /// Per-task attestation delay override in seconds. 0 = use GlobalState default.
+    pub attestation_delay_override: u32,
+    /// Per-task challenge window override in seconds. 0 = use GlobalState default.
+    pub challenge_window_override: u32,
+    /// Per-task verification timeout override in seconds. 0 = use GlobalState default.
+    pub verification_timeout_override: u32,
+    /// SHA-256 of the verification snapshot (content + metrics JSON). 0 until verified.
+    pub verification_hash: [u8; 32],
     /// Reserved space for future fields without reallocation.
-    pub _reserved: [u8; 64],
+    pub _reserved: [u8; 20],
     pub bump: u8,
 }
 
@@ -92,7 +100,11 @@ impl Task {
         + 8    // submitted_at
         + 8    // verified_at
         + 8    // challenge_deadline
-        + 64   // _reserved
+        + 4    // attestation_delay_override
+        + 4    // challenge_window_override
+        + 4    // verification_timeout_override
+        + 32   // verification_hash
+        + 20   // _reserved
         + 1; // bump
 }
 

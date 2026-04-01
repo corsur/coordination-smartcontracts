@@ -6,6 +6,7 @@ use crate::events::TaskCreated;
 use crate::state::{GlobalState, Task, TaskState};
 
 /// Client creates a new task and funds the escrow.
+#[allow(clippy::too_many_arguments)]
 pub fn create_task(
     ctx: Context<CreateTask>,
     escrow_lamports: u64,
@@ -14,6 +15,9 @@ pub fn create_task(
     submit_margin: i64,
     claim_buffer: i64,
     platform: u8,
+    attestation_delay_override: u32,
+    challenge_window_override: u32,
+    verification_timeout_override: u32,
 ) -> Result<()> {
     let clock = Clock::get()?;
     let global = &ctx.accounts.global_state;
@@ -22,7 +26,10 @@ pub fn create_task(
     require!(!global.paused, ShillbotError::ProtocolPaused);
 
     // Checks: platform is valid (must be a known PlatformType)
-    require!(platform <= 2, ShillbotError::InvalidPlatform);
+    require!(
+        shared::PlatformType::from_u8(platform).is_some(),
+        ShillbotError::InvalidPlatform
+    );
 
     // Checks: platform not paused (bit N corresponds to PlatformType with value N)
     let platform_bit = 1u16
@@ -42,6 +49,41 @@ pub fn create_task(
     // MIN_CLAIM_BUFFER_SECONDS enforced by orchestrator (off-chain) rather than
     // on-chain, so tests and direct callers can use short buffers on devnet.
     require!(escrow_lamports > 0, ShillbotError::ArithmeticOverflow);
+
+    // Checks: timing override bounds (0 = use global default, nonzero must be in range)
+    if attestation_delay_override > 0 {
+        // Minimum 1 hour, maximum 30 days
+        require!(
+            attestation_delay_override >= 3_600,
+            ShillbotError::TimingOverrideOutOfBounds
+        );
+        require!(
+            attestation_delay_override <= 2_592_000,
+            ShillbotError::TimingOverrideOutOfBounds
+        );
+    }
+    if challenge_window_override > 0 {
+        // Minimum 1 hour, maximum 7 days
+        require!(
+            challenge_window_override >= 3_600,
+            ShillbotError::TimingOverrideOutOfBounds
+        );
+        require!(
+            challenge_window_override <= 604_800,
+            ShillbotError::TimingOverrideOutOfBounds
+        );
+    }
+    if verification_timeout_override > 0 {
+        // Minimum 1 day, maximum 30 days
+        require!(
+            verification_timeout_override >= 86_400,
+            ShillbotError::TimingOverrideOutOfBounds
+        );
+        require!(
+            verification_timeout_override <= 2_592_000,
+            ShillbotError::TimingOverrideOutOfBounds
+        );
+    }
 
     // Effects: increment counter
     let global = &mut ctx.accounts.global_state;
@@ -86,7 +128,11 @@ pub fn create_task(
     task.submitted_at = 0;
     task.verified_at = 0;
     task.challenge_deadline = 0;
-    task._reserved = [0u8; 64];
+    task.attestation_delay_override = attestation_delay_override;
+    task.challenge_window_override = challenge_window_override;
+    task.verification_timeout_override = verification_timeout_override;
+    task.verification_hash = [0u8; 32];
+    task._reserved = [0u8; 20];
     task.bump = ctx.bumps.task;
 
     // Interactions: transfer escrow from client to task PDA

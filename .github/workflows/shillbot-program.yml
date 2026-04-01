@@ -1,0 +1,131 @@
+name: Shillbot Program
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'programs/shillbot/**'
+      - 'crates/**'
+      - 'tests/shillbot.ts'
+      - 'tests/shillbot-lifecycle.ts'
+      - 'Anchor.toml'
+  pull_request:
+    paths:
+      - 'programs/shillbot/**'
+      - 'crates/**'
+      - 'tests/shillbot*.ts'
+      - 'Anchor.toml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Anchor CLI
+        run: cargo install --git https://github.com/coral-xyz/anchor --tag v0.32.1 anchor-cli --locked
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+
+      - name: Generate throwaway keypair for local validator
+        run: |
+          mkdir -p ~/.config/solana
+          solana-keygen new --no-bip39-passphrase --silent -o ~/.config/solana/id.json
+
+      - name: Build programs
+        run: |
+          anchor build -p coordination-game
+          anchor build -p shillbot
+
+      - run: pnpm run lint
+
+      - name: Run shillbot tests only
+        run: npx ts-mocha -p ./tsconfig.json -t 1000000 "tests/shillbot.ts" "tests/shillbot-lifecycle.ts"
+        env:
+          ANCHOR_PROVIDER_URL: http://localhost:8899
+          ANCHOR_WALLET: ~/.config/solana/id.json
+
+      - name: Stop local validator
+        if: always()
+        run: pkill -f solana-test-validator || true
+
+  deploy-devnet:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Anchor CLI
+        run: cargo install --git https://github.com/coral-xyz/anchor --tag v0.32.1 anchor-cli --locked
+
+      - name: Write deploy keypair
+        run: |
+          mkdir -p ~/.config/solana
+          echo '${{ secrets.SOLANA_DEPLOY_KEYPAIR }}' > ~/.config/solana/id.json
+
+      - name: Write program keypairs
+        run: |
+          mkdir -p target/deploy
+          echo '${{ secrets.ANCHOR_PROGRAM_KEYPAIR }}' > target/deploy/coordination_game-keypair.json
+          echo '${{ secrets.SHILLBOT_PROGRAM_KEYPAIR }}' > target/deploy/shillbot-keypair.json
+
+      - name: Build programs
+        run: |
+          anchor build -p coordination-game
+          anchor build -p shillbot
+
+      - name: Close orphaned buffer accounts
+        run: solana program close --buffers --url devnet --keypair ~/.config/solana/id.json || true
+
+      - name: Close IDL accounts (required when IDL size increases)
+        run: |
+          anchor idl close --provider.cluster devnet 2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P || true
+          anchor idl close --provider.cluster devnet 2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi || true
+
+      - name: Deploy both programs to devnet
+        run: |
+          anchor deploy -p coordination_game --provider.cluster devnet
+          anchor deploy -p shillbot --provider.cluster devnet
+
+      - name: Verify upgrade authority (post-deploy)
+        run: |
+          bash scripts/check-upgrade-authority.sh \
+            --cluster devnet \
+            --program-id 2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P
+          bash scripts/check-upgrade-authority.sh \
+            --cluster devnet \
+            --program-id 2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi
+        env:
+          EXPECTED_MULTISIG_PUBKEY: ${{ vars.SQUADS_MULTISIG_PUBKEY }}

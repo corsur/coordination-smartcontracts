@@ -1,18 +1,26 @@
-name: Program
+name: Coordination Game
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'programs/coordination-game/**'
+      - 'crates/**'
+      - 'tests/coordination-game.ts'
+      - 'Anchor.toml'
   pull_request:
+    paths:
+      - 'programs/coordination-game/**'
+      - 'crates/**'
+      - 'tests/coordination-game.ts'
+      - 'Anchor.toml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: Swatinem/rust-cache@v2
 
       - name: Install system dependencies
@@ -36,9 +44,7 @@ jobs:
           cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
-
       - run: cargo fmt --check
-
       - run: cargo clippy --all-targets -- -D warnings
 
       - name: Generate throwaway keypair for local validator
@@ -46,14 +52,18 @@ jobs:
           mkdir -p ~/.config/solana
           solana-keygen new --no-bip39-passphrase --silent -o ~/.config/solana/id.json
 
-      - name: Build programs individually (shared crate is a library, not a program)
+      - name: Build programs
         run: |
           anchor build -p coordination-game
           anchor build -p shillbot
 
       - run: pnpm run lint
 
-      - run: anchor test
+      - name: Run coordination-game tests only
+        run: npx ts-mocha -p ./tsconfig.json -t 1000000 "tests/coordination-game.ts"
+        env:
+          ANCHOR_PROVIDER_URL: http://localhost:8899
+          ANCHOR_WALLET: ~/.config/solana/id.json
 
       - name: Stop local validator
         if: always()
@@ -67,9 +77,7 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: Swatinem/rust-cache@v2
 
       - name: Install system dependencies
@@ -106,23 +114,20 @@ jobs:
           echo '${{ secrets.ANCHOR_PROGRAM_KEYPAIR }}' > target/deploy/coordination_game-keypair.json
           echo '${{ secrets.SHILLBOT_PROGRAM_KEYPAIR }}' > target/deploy/shillbot-keypair.json
 
-      - name: Build programs individually
+      - name: Build programs
         run: |
           anchor build -p coordination-game
           anchor build -p shillbot
 
       - name: Close orphaned buffer accounts
-        run: |
-          # Failed deploys leave behind funded buffer accounts whose SOL is locked in
-          # the wallet. Close them before deploying to recover those lamports.
-          solana program close --buffers --url devnet --keypair ~/.config/solana/id.json || true
+        run: solana program close --buffers --url devnet --keypair ~/.config/solana/id.json || true
 
       - name: Close IDL accounts (required when IDL size increases)
         run: |
           anchor idl close --provider.cluster devnet 2qqVk7kUqffnahiJpcQJCsSd8ErbEUgKTgCn1zYsw64P || true
           anchor idl close --provider.cluster devnet 2tR37nqMpwdV4DVUHjzUmL1rH2DtkA8zrRA4EAhT7KMi || true
 
-      - name: Deploy programs to devnet
+      - name: Deploy both programs to devnet
         run: |
           anchor deploy -p coordination_game --provider.cluster devnet
           anchor deploy -p shillbot --provider.cluster devnet
@@ -140,7 +145,6 @@ jobs:
 
       - name: Publish SDK to GitHub Packages
         run: |
-          # Coordination Game SDK
           cp target/types/coordination_game.ts sdk/coordination_game.ts
           node -e "
             const idl = require('./target/idl/coordination_game.json');
@@ -149,7 +153,6 @@ jobs:
               '\nexport const IDL: CoordinationGame = ' + JSON.stringify(idl, null, 2) + ' as unknown as CoordinationGame;\n'
             );
           "
-          # Shillbot SDK
           cp target/types/shillbot.ts sdk/shillbot.ts
           node -e "
             const idl = require('./target/idl/shillbot.json');

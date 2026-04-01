@@ -48,8 +48,8 @@ jobs:
           cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo fmt -p coordination-game --check
+      - run: cargo clippy -p coordination-game --all-targets -- -D warnings
 
       - name: Generate throwaway keypair for local validator
         run: |

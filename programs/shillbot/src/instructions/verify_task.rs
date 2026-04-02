@@ -7,8 +7,8 @@ use crate::events::TaskVerified;
 use crate::scoring::compute_payment;
 use crate::state::{GlobalState, Task, TaskState};
 
-/// Switchboard oracle precision: values are i128 scaled by 10^18.
-const SWITCHBOARD_PRECISION: u32 = 18;
+// Switchboard On-Demand V3: get_value() returns a Decimal in human-readable
+// form (no manual rescaling needed). Old V2 used i128 scaled by 10^18.
 
 /// Oracle attestation records the composite score from a Switchboard pull feed
 /// and computes payment.
@@ -169,18 +169,9 @@ fn read_switchboard_score(feed_account: &AccountInfo, clock_slot: u64) -> Result
         .get_value(clock_slot, feed.max_staleness as u64, 1, true)
         .map_err(|_| error!(ShillbotError::SwitchboardParseError))?;
 
-    // Rescale from 10^18 precision to integer.
-    // The oracle posts the composite score as an integer value, so after
-    // removing the 10^18 scale we should get a clean integer.
-    let rescaled = value
-        .checked_div(switchboard_on_demand::prelude::rust_decimal::Decimal::from_i128_with_scale(
-            1,
-            SWITCHBOARD_PRECISION,
-        ))
-        .ok_or(ShillbotError::ArithmeticOverflow)?;
-
-    // Convert to u64 — value must be non-negative and fit in u64
-    let score = rescaled
+    // Switchboard On-Demand V3 get_value() returns a Decimal in human-readable
+    // form (e.g., 6600 for composite score 6600). Convert directly to u64.
+    let score = value
         .to_u64()
         .ok_or(ShillbotError::SwitchboardInvalidValue)?;
 

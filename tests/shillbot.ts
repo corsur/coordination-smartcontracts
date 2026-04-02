@@ -480,7 +480,7 @@ describe("shillbot", () => {
       const task = await program.account.task.fetch(taskPdaForSubmit);
       assert.deepEqual(task.state, { submitted: {} });
 
-      // Verify video_id_hash is SHA-256 of the video ID
+      // Verify content_id_hash is SHA-256 of the content ID
       const expectedHash = createHash("sha256").update(videoId).digest();
       assert.deepEqual(
         Array.from(task.contentIdHash as any),

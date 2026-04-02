@@ -60,26 +60,7 @@ pub fn verify_task(
     );
 
     // Checks: staleness — attestation within staleness_window of submitted_at + attestation_delay
-    // Use per-task override if nonzero, else global default.
-    let attestation_delay = if task.attestation_delay_override > 0 {
-        i64::from(task.attestation_delay_override)
-    } else {
-        global.attestation_delay_seconds
-    };
-    let expected_attestation_time = task
-        .submitted_at
-        .checked_add(attestation_delay)
-        .ok_or(ShillbotError::ArithmeticOverflow)?;
-    let earliest = expected_attestation_time
-        .checked_sub(global.staleness_window_seconds)
-        .ok_or(ShillbotError::ArithmeticOverflow)?;
-    let latest = expected_attestation_time
-        .checked_add(global.staleness_window_seconds)
-        .ok_or(ShillbotError::ArithmeticOverflow)?;
-    require!(
-        clock.unix_timestamp >= earliest && clock.unix_timestamp <= latest,
-        ShillbotError::AttestationStale
-    );
+    validate_attestation_staleness(task, global, clock.unix_timestamp)?;
 
     // Checks: parse Switchboard feed and validate composite_score matches the oracle value
     let feed_value = read_switchboard_score(&ctx.accounts.switchboard_feed, clock.slot)?;
@@ -123,6 +104,42 @@ pub fn verify_task(
         fee_amount,
         verification_hash,
     });
+
+    Ok(())
+}
+
+/// Validate that the current timestamp falls within the acceptable staleness window
+/// around the expected attestation time (submitted_at + attestation_delay).
+///
+/// Uses per-task override if nonzero, else global default for attestation delay.
+fn validate_attestation_staleness(
+    task: &Task,
+    global: &GlobalState,
+    now: i64,
+) -> Result<()> {
+    let attestation_delay = if task.attestation_delay_override > 0 {
+        i64::from(task.attestation_delay_override)
+    } else {
+        global.attestation_delay_seconds
+    };
+    let expected_attestation_time = task
+        .submitted_at
+        .checked_add(attestation_delay)
+        .ok_or(ShillbotError::ArithmeticOverflow)?;
+    let earliest = expected_attestation_time
+        .checked_sub(global.staleness_window_seconds)
+        .ok_or(ShillbotError::ArithmeticOverflow)?;
+    let latest = expected_attestation_time
+        .checked_add(global.staleness_window_seconds)
+        .ok_or(ShillbotError::ArithmeticOverflow)?;
+
+    // Precondition: window bounds are coherent
+    require!(earliest <= latest, ShillbotError::ArithmeticOverflow);
+
+    require!(
+        now >= earliest && now <= latest,
+        ShillbotError::AttestationStale
+    );
 
     Ok(())
 }

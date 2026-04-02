@@ -18,57 +18,30 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
     let current_slot = Clock::get()?.slot;
     let now = Clock::get()?.unix_timestamp;
     let outcome = find_timeout(game, current_slot)?;
+    let resolved = compute_timeout_result(&outcome, game.stake_lamports, game.player_one)?;
 
     let tournament_id = ctx.accounts.tournament.tournament_id;
     let treasury_split_bps = ctx.accounts.global_config.treasury_split_bps;
 
-    // Compute outcome values and capture AccountInfo handles before mutable borrows
-    let stake_lamports = game.stake_lamports;
-    let both_stakes = stake_lamports
-        .checked_mul(2)
-        .ok_or(CoordinationError::ArithmeticOverflow)?;
-
-    //  ┌──────────────────────────────────────────────────────────────────┐
-    //  │ OneWinner: winner gets full pot (2S), tournament gets 0.        │
-    //  │   Anti-griefing: non-participant forfeits, revealer/committer   │
-    //  │   is fully compensated.                                        │
-    //  │                                                                │
-    //  │ BothForfeited: both lose. Pool gain = 2S split via treasury    │
-    //  │   split bps between treasury and tournament.                   │
-    //  └──────────────────────────────────────────────────────────────────┘
-    let (pool_gain, slashed_player, p1_won, p2_won, winner_wallet) = match outcome {
-        TimeoutOutcome::OneWinner {
-            slashed_player,
-            winner_is_p1,
-        } => {
-            let winner_wallet = if winner_is_p1 {
+    // Resolve winner wallet from context before mutable borrows
+    let winner_wallet = match outcome {
+        TimeoutOutcome::OneWinner { winner_is_p1, .. } => {
+            if winner_is_p1 {
                 Some(ctx.accounts.player_one_wallet.to_account_info())
             } else {
                 Some(ctx.accounts.player_two_wallet.to_account_info())
-            };
-            // Winner gets full pot (2S); tournament/treasury get 0
-            (
-                0u64,
-                slashed_player,
-                winner_is_p1,
-                !winner_is_p1,
-                winner_wallet,
-            )
+            }
         }
-        TimeoutOutcome::BothForfeited => {
-            // Report player_one as canonical slashed address; both were slashed
-            (both_stakes, game.player_one, false, false, None)
-        }
+        TimeoutOutcome::BothForfeited => None,
     };
-    // `game` borrow ends here (NLL — last use above)
 
     let game_info = ctx.accounts.game.to_account_info();
     let tournament_info = ctx.accounts.tournament.to_account_info();
     let treasury_info = ctx.accounts.treasury.to_account_info();
 
     // Compute treasury/tournament split for pool gain
-    let (treasury_share, tournament_share) = if pool_gain > 0 {
-        let split = compute_treasury_split(pool_gain, treasury_split_bps)?;
+    let (treasury_share, tournament_share) = if resolved.pool_gain > 0 {
+        let split = compute_treasury_split(resolved.pool_gain, treasury_split_bps)?;
         (split.treasury_share, split.tournament_share)
     } else {
         (0u64, 0u64)
@@ -77,12 +50,11 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
     // Effects: apply all state mutations before any lamport transfers
     ctx.accounts
         .p1_profile
-        .update_after_game(p1_won, tournament_id)?;
+        .update_after_game(resolved.p1_won, tournament_id)?;
     ctx.accounts
         .p2_profile
-        .update_after_game(p2_won, tournament_id)?;
+        .update_after_game(resolved.p2_won, tournament_id)?;
 
-    // Always increment game_count for ALL resolved games
     ctx.accounts.tournament.game_count = ctx
         .accounts
         .tournament
@@ -115,8 +87,7 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
 
     // Interactions: lamport transfers after all state is committed
     if let Some(winner) = winner_wallet {
-        // Winner gets the full pot (2S)
-        transfer_lamports(&game_info, &winner, both_stakes)?;
+        transfer_lamports(&game_info, &winner, resolved.both_stakes)?;
     }
     if treasury_share > 0 {
         transfer_lamports(&game_info, &treasury_info, treasury_share)?;
@@ -127,10 +98,70 @@ pub fn resolve_timeout(ctx: Context<ResolveTimeout>) -> Result<()> {
 
     emit!(TimeoutSlash {
         game_id,
-        slashed_player,
-        slash_amount: pool_gain,
+        slashed_player: resolved.slashed_player,
+        slash_amount: resolved.pool_gain,
     });
     Ok(())
+}
+
+/// Pure outcome of a timeout resolution — no account references.
+struct TimeoutResult {
+    pool_gain: u64,
+    both_stakes: u64,
+    slashed_player: Pubkey,
+    p1_won: bool,
+    p2_won: bool,
+}
+
+//  ┌──────────────────────────────────────────────────────────────────┐
+//  │ OneWinner: winner gets full pot (2S), tournament gets 0.        │
+//  │   Anti-griefing: non-participant forfeits, revealer/committer   │
+//  │   is fully compensated.                                        │
+//  │                                                                │
+//  │ BothForfeited: both lose. Pool gain = 2S split via treasury    │
+//  │   split bps between treasury and tournament.                   │
+//  └──────────────────────────────────────────────────────────────────┘
+fn compute_timeout_result(
+    outcome: &TimeoutOutcome,
+    stake_lamports: u64,
+    player_one: Pubkey,
+) -> Result<TimeoutResult> {
+    let both_stakes = stake_lamports
+        .checked_mul(2)
+        .ok_or(CoordinationError::ArithmeticOverflow)?;
+
+    let result = match outcome {
+        TimeoutOutcome::OneWinner {
+            slashed_player,
+            winner_is_p1,
+        } => {
+            // Winner gets full pot (2S); tournament/treasury get 0
+            TimeoutResult {
+                pool_gain: 0,
+                both_stakes,
+                slashed_player: *slashed_player,
+                p1_won: *winner_is_p1,
+                p2_won: !winner_is_p1,
+            }
+        }
+        TimeoutOutcome::BothForfeited => {
+            // Report player_one as canonical slashed address; both were slashed
+            TimeoutResult {
+                pool_gain: both_stakes,
+                both_stakes,
+                slashed_player: player_one,
+                p1_won: false,
+                p2_won: false,
+            }
+        }
+    };
+
+    // Postcondition: pool_gain is either 0 (one winner) or 2S (both forfeited)
+    require!(
+        result.pool_gain == 0 || result.pool_gain == both_stakes,
+        CoordinationError::ArithmeticOverflow
+    );
+    Ok(result)
 }
 
 enum TimeoutOutcome {

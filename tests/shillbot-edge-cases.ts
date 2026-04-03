@@ -22,6 +22,11 @@ import { Clock } from "solana-bankrun";
 import { assert } from "chai";
 import { createHash } from "crypto";
 
+import {
+  buildMockFeedBuffer,
+  SWITCHBOARD_PROGRAM_ID,
+} from "./helpers/mock-switchboard-feed";
+
 import { Shillbot } from "../target/types/shillbot";
 const IDL = require("../target/idl/shillbot.json");
 
@@ -154,7 +159,10 @@ async function createTask(
       deadline,
       new BN(3600),
       new BN(14_400),
-      0
+      0, // platform
+      0, // attestation_delay_override (0 = use global default)
+      0, // challenge_window_override (0 = use global default)
+      0  // verification_timeout_override (0 = use global default)
     )
     .accountsPartial({
       globalState: globalPda,
@@ -195,10 +203,12 @@ async function submitWork(
   videoId: string
 ): Promise<void> {
   const [agentPda] = agentStatePda(agent.publicKey, program.programId);
+  const [gPda] = globalStatePda(program.programId);
   await program.methods
     .submitWork(Buffer.from(videoId))
     .accountsPartial({
       task: taskPdaAddr,
+      globalState: gPda,
       agentState: agentPda,
       agent: agent.publicKey,
     })
@@ -208,19 +218,35 @@ async function submitWork(
 
 async function verifyTask(
   program: Program<Shillbot>,
-  authority: Keypair,
+  ctx: Awaited<ReturnType<typeof startAnchor>>,
   taskPdaAddr: PublicKey,
   globalPda: PublicKey,
-  compositeScore: BN
+  compositeScore: BN,
+  feedPubkey: PublicKey
 ): Promise<void> {
+  // Inject mock Switchboard feed with the score
+  const clock = await ctx.banksClient.getClock();
+  const feedBuffer = buildMockFeedBuffer(
+    compositeScore.toNumber(),
+    Number(clock.slot)
+  );
+  ctx.setAccount(feedPubkey, {
+    lamports: 1_000_000_000,
+    data: feedBuffer,
+    owner: SWITCHBOARD_PROGRAM_ID,
+    executable: false,
+  });
+
+  const verificationHash = Array.from(
+    createHash("sha256").update(compositeScore.toString()).digest()
+  );
   await program.methods
-    .verifyTask(compositeScore)
+    .verifyTask(compositeScore, verificationHash as any)
     .accountsPartial({
       task: taskPdaAddr,
       globalState: globalPda,
-      authority: authority.publicKey,
+      switchboardFeed: feedPubkey,
     })
-    .signers([authority])
     .rpc();
 }
 
@@ -237,6 +263,7 @@ describe("shillbot edge cases (bankrun)", () => {
   const client = Keypair.generate();
   const agent = Keypair.generate();
   const treasury = Keypair.generate();
+  const mockFeedKeypair = Keypair.generate();
 
   let globalPda: PublicKey;
   let baseTimestamp: number;
@@ -252,6 +279,16 @@ describe("shillbot edge cases (bankrun)", () => {
     }
 
     await initializeGlobal(program, authority, treasury.publicKey, globalPda);
+
+    // Set up mock Switchboard feed
+    await program.methods
+      .setSwitchboardFeed(mockFeedKeypair.publicKey)
+      .accountsPartial({
+        globalState: globalPda,
+        authority: authority.publicKey,
+      })
+      .signers([authority])
+      .rpc();
 
     const clock = await context.banksClient.getClock();
     baseTimestamp = Number(clock.unixTimestamp);
@@ -535,10 +572,11 @@ describe("shillbot edge cases (bankrun)", () => {
 
       await verifyTask(
         program,
-        authority,
+        context,
         tPda,
         globalPda,
-        new BN(500_000)
+        new BN(500_000),
+        mockFeedKeypair.publicKey
       );
 
       // Try to finalize immediately (challenge window still open)
@@ -582,10 +620,11 @@ describe("shillbot edge cases (bankrun)", () => {
 
       await verifyTask(
         program,
-        authority,
+        context,
         tPda,
         globalPda,
-        new BN(500_000)
+        new BN(500_000),
+        mockFeedKeypair.publicKey
       );
 
       // Warp past challenge window
@@ -751,10 +790,11 @@ describe("shillbot edge cases (bankrun)", () => {
       // Verify with score below threshold (100_000 < 200_000 threshold)
       await verifyTask(
         program,
-        authority,
+        context,
         tPda,
         globalPda,
-        new BN(100_000)
+        new BN(100_000),
+        mockFeedKeypair.publicKey
       );
 
       const verifiedTask = await program.account.task.fetch(tPda);

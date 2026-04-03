@@ -13,6 +13,11 @@ import { Clock } from "solana-bankrun";
 import { assert } from "chai";
 import { createHash } from "crypto";
 
+import {
+  buildMockFeedBuffer,
+  SWITCHBOARD_PROGRAM_ID,
+} from "./helpers/mock-switchboard-feed";
+
 // Import the IDL type — anchor-bankrun requires the JSON IDL
 import { Shillbot } from "../target/types/shillbot";
 const IDL = require("../target/idl/shillbot.json");
@@ -203,7 +208,10 @@ async function createTask(
       deadline,
       new BN(3600), // submit_margin = 1 hour
       new BN(14_400), // claim_buffer = 4 hours
-      0 // platform = YouTube
+      0, // platform = YouTube
+      0, // attestation_delay_override (0 = use global default)
+      0, // challenge_window_override (0 = use global default)
+      0  // verification_timeout_override (0 = use global default)
     )
     .accountsPartial({
       globalState: globalPda,
@@ -224,10 +232,12 @@ async function claimTask(
   taskPdaAddr: PublicKey
 ): Promise<void> {
   const [agentPda] = agentStatePda(agent.publicKey, program.programId);
+  const [gPda] = globalStatePda(program.programId);
   await program.methods
     .claimTask()
     .accountsPartial({
       task: taskPdaAddr,
+      globalState: gPda,
       agentState: agentPda,
       agent: agent.publicKey,
       systemProgram: SystemProgram.programId,
@@ -243,10 +253,12 @@ async function submitWork(
   videoId: string
 ): Promise<void> {
   const [agentPda] = agentStatePda(agent.publicKey, program.programId);
+  const [gPda] = globalStatePda(program.programId);
   await program.methods
     .submitWork(Buffer.from(videoId))
     .accountsPartial({
       task: taskPdaAddr,
+      globalState: gPda,
       agentState: agentPda,
       agent: agent.publicKey,
     })
@@ -254,21 +266,38 @@ async function submitWork(
     .rpc();
 }
 
+/** Set up mock Switchboard feed with the given score, then call verify_task. */
 async function verifyTask(
   program: Program<Shillbot>,
-  authority: Keypair,
+  ctx: Awaited<ReturnType<typeof startAnchor>>,
   taskPdaAddr: PublicKey,
   globalPda: PublicKey,
-  compositeScore: BN
+  compositeScore: BN,
+  feedPubkey: PublicKey
 ): Promise<void> {
+  // Inject mock feed account data with the score into bankrun
+  const clock = await ctx.banksClient.getClock();
+  const feedBuffer = buildMockFeedBuffer(
+    compositeScore.toNumber(),
+    Number(clock.slot)
+  );
+  ctx.setAccount(feedPubkey, {
+    lamports: 1_000_000_000,
+    data: feedBuffer,
+    owner: SWITCHBOARD_PROGRAM_ID,
+    executable: false,
+  });
+
+  const verificationHash = Array.from(
+    createHash("sha256").update(compositeScore.toString()).digest()
+  );
   await program.methods
-    .verifyTask(compositeScore)
+    .verifyTask(compositeScore, verificationHash as any)
     .accountsPartial({
       task: taskPdaAddr,
       globalState: globalPda,
-      authority: authority.publicKey,
+      switchboardFeed: feedPubkey,
     })
-    .signers([authority])
     .rpc();
 }
 
@@ -287,6 +316,7 @@ describe("shillbot-lifecycle (bankrun)", () => {
   const agent = Keypair.generate();
   const challenger = Keypair.generate();
   const treasury = Keypair.generate();
+  const mockFeedKeypair = Keypair.generate();
 
   let globalPda: PublicKey;
 
@@ -304,6 +334,16 @@ describe("shillbot-lifecycle (bankrun)", () => {
 
     // Initialize global state
     await initializeGlobal(program, authority, treasury.publicKey, globalPda);
+
+    // Set up mock Switchboard feed for verify_task tests
+    await program.methods
+      .setSwitchboardFeed(mockFeedKeypair.publicKey)
+      .accountsPartial({
+        globalState: globalPda,
+        authority: authority.publicKey,
+      })
+      .signers([authority])
+      .rpc();
   });
 
   // -------------------------------------------------------------------------
@@ -336,10 +376,11 @@ describe("shillbot-lifecycle (bankrun)", () => {
 
       await verifyTask(
         program,
-        authority,
+        context,
         setup.taskPda,
         globalPda,
-        new BN(MAX_SCORE)
+        new BN(MAX_SCORE),
+        mockFeedKeypair.publicKey
       );
 
       const task = await program.account.task.fetch(setup.taskPda);
@@ -448,10 +489,11 @@ describe("shillbot-lifecycle (bankrun)", () => {
       await warpToTimestamp(context, submittedAt + SEVEN_DAYS_SECONDS);
       await verifyTask(
         program,
-        authority,
+        context,
         setup.taskPda,
         globalPda,
-        new BN(800_000)
+        new BN(800_000),
+        mockFeedKeypair.publicKey
       );
 
       const verified = await program.account.task.fetch(setup.taskPda);
@@ -582,10 +624,11 @@ describe("shillbot-lifecycle (bankrun)", () => {
       await warpToTimestamp(context, submittedAt + SEVEN_DAYS_SECONDS);
       await verifyTask(
         program,
-        authority,
+        context,
         setup.taskPda,
         globalPda,
-        new BN(score)
+        new BN(score),
+        mockFeedKeypair.publicKey
       );
 
       const verified = await program.account.task.fetch(setup.taskPda);
@@ -730,11 +773,14 @@ describe("shillbot-lifecycle (bankrun)", () => {
 
       // Warp to T+7d for verification
       await warpToTimestamp(context, submittedAt + SEVEN_DAYS_SECONDS);
-      await verifyTask(program, authority, setup.taskPda, globalPda, new BN(0));
+      // Score 100_000 is below threshold (200_000) — no payment, full escrow to client.
+      // Score 0 is invalid (Switchboard requires positive feed value).
+      await verifyTask(program, context, setup.taskPda, globalPda, new BN(100_000), mockFeedKeypair.publicKey);
 
       const verified = await program.account.task.fetch(setup.taskPda);
       assert.deepEqual(verified.state, { verified: {} });
-      assert.equal(verified.compositeScore.toString(), "0");
+      // Score 100_000 is below threshold 200_000 → payment = 0
+      assert.equal(verified.compositeScore.toString(), "100000");
       assert.equal(verified.paymentAmount.toString(), "0");
     });
 
